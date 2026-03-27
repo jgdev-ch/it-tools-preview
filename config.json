@@ -38,9 +38,9 @@
       "name": "Guest Access Audit",
       "description": "Identify stale B2B guest accounts — review last sign-in, group memberships, and license exposure across your tenant.",
       "icon": "🛡️",
-      "status": "coming-soon",
-      "path": "",
-      "permissions": ["User.Read.All", "Directory.Read.All"],
+      "status": "beta",
+      "path": "tools/guest-audit/",
+      "permissions": ["User.Read.All", "User.ReadWrite.All", "Directory.Read.All", "AuditLog.Read.All"],
       "accent": "#5b21b6",
       "iconBg": "#ede9fe"
     },
