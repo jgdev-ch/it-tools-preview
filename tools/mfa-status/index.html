@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MFA Status Report — IT Tools</title>
+<script src="../../shared/msal-browser.min.js"></script>
+<link rel="stylesheet" href="../../shared/styles.css"/>
+<style>
+  .shell { max-width: 1020px; margin: 0 auto; padding: 1.75rem 1.25rem; }
+  .page-header { margin-bottom: 1.5rem; }
+  .page-header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .page-header p  { font-size: 13px; color: var(--muted); }
+
+  /* ── Risk score bar ── */
+  .risk-bar-wrap { margin: 1rem 0 .5rem; }
+  .risk-bar-label { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:5px; }
+  .risk-bar-track { height:8px; background:var(--surface3); border-radius:4px; overflow:hidden; display:flex; }
+  .risk-bar-strong { background:var(--green);  height:100%; transition:width .4s ease; }
+  .risk-bar-weak   { background:var(--amber);  height:100%; transition:width .4s ease; }
+  .risk-bar-none   { background:var(--red);    height:100%; transition:width .4s ease; }
+
+  /* ── MFA method checkboxes ── */
+  .method-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px; margin-top: 10px;
+  }
+  .method-check {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: var(--surface2);
+    cursor: pointer; transition: all .12s; font-size: 13px;
+  }
+  .method-check:hover { border-color: var(--border-mid); background: var(--surface3); }
+  .method-check.selected {
+    border-color: var(--red-border); background: var(--red-light); color: var(--red);
+  }
+  .method-check input[type="checkbox"] {
+    width: 14px; height: 14px; accent-color: var(--red); cursor: pointer; flex-shrink: 0;
+  }
+  .method-icon { font-size: 14px; flex-shrink: 0; }
+  .method-label { font-size: 12px; font-weight: 500; }
+  .method-sub   { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+  .filter-actions { display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap; }
+  .filter-note { font-size:11px; color:var(--muted2); }
+
+  /* ── Scan warning + cancel ── */
+  .scan-warning {
+    background: var(--amber-light); border: 1px solid var(--amber-border);
+    border-radius: var(--radius-sm); padding: 10px 14px;
+    font-size: 13px; color: var(--amber); margin-top: 10px; display: none; line-height: 1.5;
+  }
+  .btn-cancel {
+    padding: 9px 20px; border-radius: var(--radius-sm);
+    background: transparent; color: var(--red); border: 1.5px solid var(--red-border);
+    font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: all .12s; display: none; align-items: center; gap: 6px;
+  }
+  .btn-cancel:hover { background: var(--red-light); }
+  .btn-cancel.show  { display: inline-flex; }
+
+  /* ── Disabled scope notice ── */
+  .disabled-notice {
+    display: none;
+    background: var(--amber-light); border: 1px solid var(--amber-border);
+    border-radius: var(--radius-sm); padding: 10px 14px;
+    font-size: 13px; color: var(--amber); margin-top: 10px; line-height: 1.5;
+  }
+  .disabled-notice.show { display: block; }
+
+  /* ── MFA pills in table ── */
+  .mfa-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px; border-radius: 20px; font-size: 11px;
+    font-weight: 600; margin: 1px; white-space: nowrap;
+  }
+  .mfa-strong     { background: var(--green-light);  color: var(--green); }
+  .mfa-weak       { background: var(--amber-light);  color: var(--amber); }
+  .mfa-none       { background: var(--red-light);    color: var(--red); }
+  .mfa-unknown    { background: var(--surface3);     color: var(--muted); }
+
+  /* ── Risk badges ── */
+  .risk-high   { background:var(--red-light);    color:var(--red);   border-radius:4px; padding:2px 8px; font-size:11px; font-weight:700; }
+  .risk-medium { background:var(--amber-light);  color:var(--amber); border-radius:4px; padding:2px 8px; font-size:11px; font-weight:700; }
+  .risk-low    { background:var(--green-light);  color:var(--green); border-radius:4px; padding:2px 8px; font-size:11px; font-weight:700; }
+
+  /* ── Account status badges ── */
+  .acct-disabled { background:var(--red-light);   color:var(--red);   border-radius:4px; padding:2px 8px; font-size:11px; font-weight:700; }
+  .acct-enabled  { background:var(--green-light); color:var(--green); border-radius:4px; padding:2px 8px; font-size:11px; font-weight:700; }
+
+  .user-cell  { display:flex; align-items:center; gap:10px; }
+  .avatar     { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; }
+  .avatar.high         { background:var(--red-light);   color:var(--red); }
+  .avatar.medium       { background:var(--amber-light); color:var(--amber); }
+  .avatar.low          { background:var(--green-light); color:var(--green); }
+  .avatar.disabled-acc { background:var(--surface3);    color:var(--muted); }
+  .user-name { font-size:13px; font-weight:600; }
+  .user-upn  { font-size:11px; color:var(--muted); }
+
+  /* ── Progress ── */
+  .scan-progress { margin: 1rem 0; }
+
+  #authScreen { display:flex; }
+</style>
+</head>
+<body>
+
+<div id="topbar"></div>
+
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div style="width:44px;height:44px;background:var(--red-light);border-radius:11px;display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:22px">🔑</div>
+    <h1>MFA Status Report</h1>
+    <p>Sign in with your Microsoft 365 admin account to audit MFA registration status across your tenant.</p>
+    <button class="btn-ms" onclick="doSignIn()">
+      <svg viewBox="0 0 21 21" width="17" height="17" fill="none">
+        <rect x="1"  y="1"  width="9" height="9" fill="#f25022"/>
+        <rect x="11" y="1"  width="9" height="9" fill="#7fba00"/>
+        <rect x="1"  y="11" width="9" height="9" fill="#00a4ef"/>
+        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+      </svg>
+      Sign in with Microsoft
+    </button>
+    <div class="auth-error" id="authErr"></div>
+    <p class="auth-note">Requires <strong>User.Read.All</strong>, <strong>UserAuthenticationMethod.Read.All</strong>, and <strong>AuditLog.Read.All</strong>.</p>
+    <button class="redirect-toggle" onclick="toggleUri()">Show redirect URI for app registration</button>
+    <div class="redirect-box" id="uriBox"></div>
+  </div>
+</div>
+
+<div id="appScreen" style="display:none">
+  <div class="shell">
+
+    <div class="page-header">
+      <h1>MFA Status Report</h1>
+      <p>Audit MFA registration across your tenant. Flag users with weak or missing authentication methods.</p>
+    </div>
+
+    <!-- Configure -->
+    <div class="card">
+      <div class="card-title">Configure scan</div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+        <div class="field" style="flex:1 1 200px;margin-bottom:0">
+          <label class="field-label">Scope</label>
+          <select id="scopeSelect" onchange="onScopeChange()">
+            <option value="all">All enabled users</option>
+            <option value="licensed">Licensed users only</option>
+            <option value="admins">Admin accounts only</option>
+            <option value="disabled">Disabled accounts</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1 1 200px;margin-bottom:0">
+          <label class="field-label">Department filter</label>
+          <input type="text" id="deptFilter" placeholder="Leave blank for all departments"/>
+        </div>
+        <button class="btn btn-primary" id="scanBtn" onclick="startScan()">Run Scan</button>
+        <button class="btn-cancel" id="cancelBtn" onclick="cancelScan()">✕ Cancel</button>
+      </div>
+      <div class="disabled-notice" id="disabledNotice">
+        ⚠ <strong>Disabled accounts mode.</strong> Showing all disabled user accounts regardless of license assignment.
+        These accounts may still hold licenses and represent a cleanup and cost-recovery opportunity.
+        Consider reviewing with your team before deletion.
+      </div>
+      <div class="scan-warning" id="scopeWarning"></div>
+      <div class="phase-line" id="phaseLine"><div class="spinner"></div><span id="phaseText"></span></div>
+    </div>
+
+    <div class="banner error" id="errBanner"></div>
+    <div class="banner info"  id="infoBanner"></div>
+
+    <!-- Stats -->
+    <div class="stats-row" id="statsRow" style="display:none"></div>
+
+    <!-- Risk bar -->
+    <div class="card" id="riskCard" style="display:none">
+      <div class="card-title">MFA coverage</div>
+      <div class="risk-bar-wrap">
+        <div class="risk-bar-label">
+          <span id="rbStrongLabel">Strong MFA</span>
+          <span id="rbPct"></span>
+        </div>
+        <div class="risk-bar-track">
+          <div class="risk-bar-strong" id="rbStrong" style="width:0%"></div>
+          <div class="risk-bar-weak"   id="rbWeak"   style="width:0%"></div>
+          <div class="risk-bar-none"   id="rbNone"   style="width:0%"></div>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--muted)">
+          <span><span style="color:var(--green);font-weight:700">■</span> Strong MFA</span>
+          <span><span style="color:var(--amber);font-weight:700">■</span> Weak method</span>
+          <span><span style="color:var(--red);font-weight:700">■</span> No MFA</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Method filter -->
+    <div class="card" id="filterCard" style="display:none">
+      <div class="card-title">Flag users by authentication method</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:2px">
+        Select which methods your security team considers insufficient. The table will highlight users relying only on these methods.
+      </p>
+      <div class="method-grid" id="methodGrid"></div>
+      <div class="filter-actions">
+        <button class="btn btn-ghost" style="padding:6px 14px;font-size:12px" onclick="selectWeakDefaults()">Select weak defaults</button>
+        <button class="btn btn-ghost" style="padding:6px 14px;font-size:12px" onclick="clearMethodFilter()">Clear all</button>
+        <span class="filter-note" id="filterNote"></span>
+      </div>
+    </div>
+
+    <!-- Results table -->
+    <div id="tableSection"></div>
+
+  </div>
+</div>
+
+<script src="../../shared/auth.js"></script>
+<script>
+const TOOL_SCOPES = ["User.Read.All","UserAuthenticationMethod.Read.All","AuditLog.Read.All"];
+
+// ── MFA method definitions ────────────────────────────────────────────────────
+const MFA_METHODS = {
+  "#microsoft.graph.microsoftAuthenticatorAuthenticationMethod": {
+    label: "Microsoft Authenticator",
+    icon:  "📱",
+    strength: "strong",
+    sub: "Push notification / code"
+  },
+  "#microsoft.graph.fido2AuthenticationMethod": {
+    label: "FIDO2 Security Key",
+    icon:  "🔐",
+    strength: "strong",
+    sub: "Hardware security key"
+  },
+  "#microsoft.graph.windowsHelloForBusinessAuthenticationMethod": {
+    label: "Windows Hello for Business",
+    icon:  "👁️",
+    strength: "strong",
+    sub: "Biometric / PIN"
+  },
+  "#microsoft.graph.passwordlessMicrosoftAuthenticatorAuthenticationMethod": {
+    label: "Authenticator Passwordless",
+    icon:  "🔓",
+    strength: "strong",
+    sub: "Passwordless sign-in"
+  },
+  "#microsoft.graph.temporaryAccessPassAuthenticationMethod": {
+    label: "Temporary Access Pass",
+    icon:  "⏱️",
+    strength: "strong",
+    sub: "Time-limited pass"
+  },
+  "#microsoft.graph.phoneAuthenticationMethod": {
+    label: "SMS / Voice call",
+    icon:  "📞",
+    strength: "weak",
+    sub: "Text message or call"
+  },
+  "#microsoft.graph.emailAuthenticationMethod": {
+    label: "Email OTP",
+    icon:  "📧",
+    strength: "weak",
+    sub: "One-time code via email"
+  },
+  "#microsoft.graph.softwareOathAuthenticationMethod": {
+    label: "Software OATH Token",
+    icon:  "🔢",
+    strength: "weak",
+    sub: "Third-party authenticator app"
+  },
+  "#microsoft.graph.hardwareOathAuthenticationMethod": {
+    label: "Hardware OATH Token",
+    icon:  "🔑",
+    strength: "strong",
+    sub: "Physical token device"
+  },
+  "#microsoft.graph.passwordAuthenticationMethod": {
+    label: "Password only",
+    icon:  "🔒",
+    strength: "none",
+    sub: "No MFA registered"
+  },
+};
+
+const PASSWORD_ONLY_TYPE = "#microsoft.graph.passwordAuthenticationMethod";
+
+function getMethodInfo(type) {
+  return MFA_METHODS[type] || { label: type.split(".").pop().replace("AuthenticationMethod",""), icon: "❓", strength: "unknown", sub: "" };
+}
+
+// ── Report endpoint method name → @odata.type mapping ────────────────────────
+// /reports/authenticationMethods/userRegistrationDetails returns short string
+// names instead of @odata.type values. Map them back so all rendering code
+// stays identical regardless of which fetch path was used.
+const REPORT_METHOD_MAP = {
+  // Strong
+  "microsoftAuthenticator":             "#microsoft.graph.microsoftAuthenticatorAuthenticationMethod",
+  "authenticatorApp":                   "#microsoft.graph.microsoftAuthenticatorAuthenticationMethod",
+  "fido2":                              "#microsoft.graph.fido2AuthenticationMethod",
+  "windowsHelloForBusiness":            "#microsoft.graph.windowsHelloForBusinessAuthenticationMethod",
+  "microsoftAuthenticatorPasswordless": "#microsoft.graph.passwordlessMicrosoftAuthenticatorAuthenticationMethod",
+  "temporaryAccessPass":                "#microsoft.graph.temporaryAccessPassAuthenticationMethod",
+  "hardwareOneTimePasscode":            "#microsoft.graph.hardwareOathAuthenticationMethod",
+  // Weak
+  "mobilePhone":                        "#microsoft.graph.phoneAuthenticationMethod",
+  "alternateMobilePhone":               "#microsoft.graph.phoneAuthenticationMethod",
+  "officePhone":                        "#microsoft.graph.phoneAuthenticationMethod",
+  "email":                              "#microsoft.graph.emailAuthenticationMethod",
+  "softwareOneTimePasscode":            "#microsoft.graph.softwareOathAuthenticationMethod",
+  // No MFA
+  "password":                           "#microsoft.graph.passwordAuthenticationMethod",
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allUsers       = [];
+let flaggedMethods = new Set();
+let sortCol = "riskLevel", sortDir = -1;
+let _cancelled     = false;
+let _scanStartTime = 0;
+
+// ── Scope change handler ──────────────────────────────────────────────────────
+function onScopeChange() {
+  const scope  = document.getElementById("scopeSelect").value;
+  const notice = document.getElementById("disabledNotice");
+  notice.classList.toggle("show", scope === "disabled");
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  ITTools.theme.init();
+  ITTools.ui.renderTopbar({ toolName: "MFA Status Report", hubRelPath: "../../" });
+  ITTools.ui.syncThemeIcon();
+
+  await ITTools.auth.init({
+    scopes: TOOL_SCOPES,
+    onSignIn: acct => {
+      document.getElementById("authScreen").style.display = "none";
+      document.getElementById("appScreen").style.display  = "block";
+      ITTools.ui.setUser(acct);
+    },
+    onSignOut: () => {
+      document.getElementById("appScreen").style.display  = "none";
+      document.getElementById("authScreen").style.display = "flex";
+      ITTools.ui.clearUser();
+    }
+  });
+}
+
+async function doSignIn() {
+  try {
+    const acct = await ITTools.auth.signIn();
+    document.getElementById("authScreen").style.display = "none";
+    document.getElementById("appScreen").style.display  = "block";
+    ITTools.ui.setUser(acct);
+  } catch(e) {
+    const el = document.getElementById("authErr");
+    el.textContent = e.message; el.style.display = "block";
+  }
+}
+
+function toggleUri() {
+  const b = document.getElementById("uriBox");
+  b.textContent = ITTools.auth.redirectUri();
+  b.style.display = b.style.display === "none" ? "block" : "none";
+}
+
+// ── Graph retry ───────────────────────────────────────────────────────────────
+async function graphWithRetry(fn, maxRetries = 5) {
+  let attempt = 0;
+  while (true) {
+    try { return await fn(); }
+    catch(e) {
+      attempt++;
+      const isRateLimit = e.message && (
+        e.message.includes("429") || e.message.includes("Rate limited") ||
+        e.message.includes("Too Many Requests") || e.message.includes("503")
+      );
+      if (!isRateLimit || attempt > maxRetries) throw e;
+      const waitSec = Math.min(60, Math.pow(2, attempt));
+      setPhase(`Rate limited — retrying in ${waitSec}s…`);
+      _pauseActiveTimer();
+      await countdownEta(waitSec);
+      _resumeActiveTimer();
+    }
+  }
+}
+
+// ── Phase ─────────────────────────────────────────────────────────────────────
+function setPhase(msg) {
+  const line   = document.getElementById("phaseLine");
+  const btn    = document.getElementById("scanBtn");
+  const cancel = document.getElementById("cancelBtn");
+  if (msg) {
+    line.classList.add("show");
+    document.getElementById("phaseText").textContent = msg;
+    btn.disabled    = true;
+    btn.textContent = "Scanning…";
+    cancel.classList.add("show");
+  } else {
+    line.classList.remove("show");
+    btn.disabled    = false;
+    btn.textContent = "Run Scan";
+    cancel.classList.remove("show");
+  }
+}
+
+// ── Cancel ────────────────────────────────────────────────────────────────────
+function cancelScan() {
+  _cancelled = true;
+  setPhase(null);
+  const warn = document.getElementById("infoBanner");
+  warn.textContent   = "⚠ Scan cancelled — partial results shown below.";
+  warn.className     = "banner warn";
+  warn.style.display = "block";
+}
+
+// ── Scan ──────────────────────────────────────────────────────────────────────
+async function startScan() {
+  document.getElementById("errBanner").style.display    = "none";
+  document.getElementById("infoBanner").style.display   = "none";
+  document.getElementById("scopeWarning").style.display = "none";
+  document.getElementById("statsRow").style.display     = "none";
+  document.getElementById("riskCard").style.display     = "none";
+  document.getElementById("filterCard").style.display   = "none";
+  document.getElementById("tableSection").innerHTML     = "";
+  allUsers = []; flaggedMethods = new Set();
+  _cancelled = false; _scanStartTime = Date.now();
+
+  const scope      = document.getElementById("scopeSelect").value;
+  const dept       = document.getElementById("deptFilter").value.trim();
+  const isDisabled = scope === "disabled";
+
+  try {
+    setPhase("Fetching users…");
+
+    let users;
+
+    if (isDisabled) {
+      // ── Disabled accounts scope ──────────────────────────────────────────────
+      setPhase("Fetching disabled accounts…");
+      let disabledUrl = "https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department,jobTitle,accountEnabled,assignedLicenses,userType&$filter=accountEnabled eq false&$top=999&$count=true";
+      if (dept) {
+        disabledUrl = `https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department,jobTitle,accountEnabled,assignedLicenses,userType&$filter=accountEnabled eq false and department eq '${dept.replace(/'/g,"''")}'&$top=999&$count=true`;
+      }
+      try {
+        users = await graphWithRetry(() => ITTools.graph.getAll(disabledUrl));
+      } catch(_) {
+        // Fallback: fetch all, filter client-side
+        setPhase("Using fallback fetch for disabled accounts…");
+        const all = await graphWithRetry(() =>
+          ITTools.graph.getAll("https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department,jobTitle,accountEnabled,assignedLicenses,userType&$top=999")
+        );
+        users = all.filter(u => u.accountEnabled === false);
+        if (dept) users = users.filter(u => (u.department||"").toLowerCase().includes(dept.toLowerCase()));
+      }
+
+    } else if (scope === "admins") {
+      // ── Admin scope ──────────────────────────────────────────────────────────
+      setPhase("Fetching admin role members…");
+      try {
+        const roles = await graphWithRetry(() =>
+          ITTools.graph.getAll("https://graph.microsoft.com/v1.0/directoryRoles?$select=id,displayName")
+        );
+        const memberSets = await Promise.all(roles.map(role =>
+          graphWithRetry(() =>
+            ITTools.graph.getAll(
+              `https://graph.microsoft.com/v1.0/directoryRoles/${role.id}/members?$select=id,displayName,userPrincipalName,department,jobTitle,accountEnabled,assignedLicenses,userType`
+            )
+          ).catch(() => [])
+        ));
+        const seen = new Set();
+        users = memberSets.flat().filter(u => {
+          if (!u.id || seen.has(u.id)) return false;
+          if (u.accountEnabled === false) return false;
+          if (u["@odata.type"] && !u["@odata.type"].includes("user")) return false;
+          seen.add(u.id);
+          return true;
+        });
+        setPhase(`Found ${users.length} admin account${users.length !== 1 ? "s" : ""} across ${roles.length} roles…`);
+      } catch(_) {
+        setPhase("Fallback: fetching all users for admin filter…");
+        const allU = await graphWithRetry(() =>
+          ITTools.graph.getAll("https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department,jobTitle,accountEnabled,assignedLicenses,userType&$top=999")
+        );
+        users = allU.filter(u => u.accountEnabled !== false && u.userType !== "Guest");
+      }
+
+    } else {
+      // ── All enabled / Licensed scope ─────────────────────────────────────────
+      let userUrl = "https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department,jobTitle,accountEnabled,assignedLicenses,userType&$filter=accountEnabled eq true&$top=999&$count=true";
+      if (scope === "licensed") userUrl += " and assignedLicenses/$count ne 0";
+      if (dept) userUrl = userUrl.replace("$filter=", `$filter=department eq '${dept.replace(/'/g,"''")}' and `);
+
+      try {
+        users = await graphWithRetry(() => ITTools.graph.getAll(userUrl));
+      } catch(_) {
+        setPhase("Fallback: fetching all users…");
+        let fallbackUrl = "https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department,jobTitle,accountEnabled,assignedLicenses,userType&$top=999";
+        users = await graphWithRetry(() => ITTools.graph.getAll(fallbackUrl));
+        users = users.filter(u => u.accountEnabled !== false && u.userType !== "Guest");
+        if (dept)                users = users.filter(u => (u.department||"").toLowerCase().includes(dept.toLowerCase()));
+        if (scope === "licensed") users = users.filter(u => u.assignedLicenses?.length > 0);
+      }
+    }
+
+    // Apply department filter for non-disabled, non-admin scopes
+    if (!isDisabled && scope !== "admins" && dept) {
+      users = users.filter(u => (u.department||"").toLowerCase().includes(dept.toLowerCase()));
+    }
+
+    if (!users.length) {
+      document.getElementById("infoBanner").textContent   = isDisabled
+        ? "No disabled accounts found" + (dept ? ` in department "${dept}"` : "") + "."
+        : "No users found matching your filter.";
+      document.getElementById("infoBanner").style.display = "block";
+      setPhase(null); return;
+    }
+
+    // Show scope warning for very large tenants — report endpoint is fast but
+    // the subsequent user-join pass can be slow above ~20k users
+    if (users.length > 10000) {
+      const warn = document.getElementById("scopeWarning");
+      warn.innerHTML = `⚠ <strong>${users.length.toLocaleString()} users found.</strong> Large tenant — fetching registration data in bulk. This should complete in under a minute. Use the department filter to narrow results, or click Cancel at any time to see partial results.`;
+      warn.style.display = "block";
+    }
+
+    // 2. Fetch MFA registration data
+    // Strategy (fastest → slowest, automatic fallback):
+    //   A. Report endpoint  — one paginated bulk call, all users at once
+    //                         NOTE: report endpoint only covers enabled accounts,
+    //                         so disabled scope skips straight to B.
+    //   B. Graph $batch     — 20 sub-requests per HTTP call
+    //   C. Per-user calls   — 15 concurrent, original approach
+
+    showScanProgress();
+
+    // methodMap: userId → string[] of @odata.type values (normalised across all paths)
+    let methodMap = null;
+    let fetchError = false;
+
+    // Report endpoint only covers enabled accounts — disabled scope goes straight to batch
+    const canUseReportEndpoint = !isDisabled;
+
+    if (canUseReportEndpoint) {
+      try {
+        methodMap = await fetchViaReportEndpoint(users.length);
+      } catch(reportErr) {
+        updateScanLabel(`Report endpoint unavailable — switching to batch mode…`, null);
+        methodMap = null;
+      }
+    }
+
+    if (!methodMap) {
+      try {
+        methodMap = await fetchViaBatch(users);
+      } catch(batchErr) {
+        updateScanLabel(`Batch mode failed — falling back to per-user calls…`, null);
+        try {
+          methodMap = await fetchPerUser(users);
+        } catch(perUserErr) {
+          fetchError = true;
+          methodMap  = new Map();
+        }
+      }
+    }
+
+    // 3. Process results — identical logic regardless of which fetch path ran
+    allUsers = users.map(u => {
+      const rawTypes    = methodMap.get(u.id) ?? null;
+      const hasMapError = rawTypes === null;
+      // Strip password-only entries — they mean "no real MFA registered"
+      const methodTypes = hasMapError
+        ? []
+        : rawTypes.filter(t => t !== PASSWORD_ONLY_TYPE);
+
+      const hasStrong      = methodTypes.some(t => MFA_METHODS[t]?.strength === "strong");
+      const hasWeak        = methodTypes.some(t => MFA_METHODS[t]?.strength === "weak");
+      const hasNone        = methodTypes.length === 0;
+      const accountEnabled = u.accountEnabled !== false;
+      const hasLicense     = (u.assignedLicenses || []).length > 0;
+
+      let riskLevel;
+      if (hasNone)         riskLevel = 2;
+      else if (!hasStrong) riskLevel = 1;
+      else                 riskLevel = 0;
+
+      return {
+        id:             u.id,
+        displayName:    u.displayName || "",
+        upn:            u.userPrincipalName || "",
+        department:     u.department || "",
+        jobTitle:       u.jobTitle || "",
+        accountEnabled,
+        hasLicense,
+        methodTypes,
+        riskLevel,
+        hasStrong,
+        hasWeak,
+        hasNone,
+        error: hasMapError,
+      };
+    });
+
+    renderStats(allUsers, isDisabled);
+    renderRiskBar(allUsers);
+    renderMethodFilter(allUsers);
+    renderTable(allUsers, isDisabled);
+    setPhase(null);
+
+  } catch(e) {
+    document.getElementById("errBanner").textContent   = e.message;
+    document.getElementById("errBanner").style.display = "block";
+    setPhase(null);
+  }
+}
+
+// ── Progress UI helpers ───────────────────────────────────────────────────────
+function showScanProgress() {
+  document.getElementById("tableSection").innerHTML = `
+    <div class="card scan-progress">
+      <div class="card-title">Fetching authentication data</div>
+      <div class="progress-wrap">
+        <div class="progress-meta">
+          <span id="scanLabel">Starting…</span>
+          <span id="scanPct">0%</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="scanFill"></div></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+        <span style="font-size:11px;color:var(--muted)" id="scanEta"></span>
+        <span style="font-size:11px;color:var(--muted2)">Click Cancel above to stop and see partial results</span>
+      </div>
+    </div>`;
+}
+
+function updateScanLabel(label, pct) {
+  const lbl   = document.getElementById("scanLabel");
+  const pctEl = document.getElementById("scanPct");
+  const fill  = document.getElementById("scanFill");
+  if (lbl)   lbl.textContent   = label;
+  if (pct !== null) {
+    if (pctEl) pctEl.textContent = pct + "%";
+    if (fill)  fill.style.width  = pct + "%";
+  }
+}
+
+// ── Active-time tracker ──────────────────────────────────────────────────────
+// Tracks only the time spent doing real work, excluding backoff waits.
+// graphWithRetry calls _pauseActiveTimer / _resumeActiveTimer around waits.
+let _activeStart   = null;  // timestamp when current active period began
+let _activeElapsed = 0;     // cumulative active milliseconds across all periods
+
+function _resetActiveTimer() {
+  _activeStart   = Date.now();
+  _activeElapsed = 0;
+}
+function _pauseActiveTimer() {
+  if (_activeStart !== null) {
+    _activeElapsed += Date.now() - _activeStart;
+    _activeStart    = null;
+  }
+}
+function _resumeActiveTimer() {
+  _activeStart = Date.now();
+}
+function _getActiveElapsedSec() {
+  const extra = _activeStart !== null ? (Date.now() - _activeStart) : 0;
+  return (_activeElapsed + extra) / 1000;
+}
+
+// Shows a live countdown in the ETA line during a known backoff wait,
+// then restores the 'remaining' phrasing when done.
+async function countdownEta(seconds) {
+  const eta = document.getElementById("scanEta");
+  for (let s = seconds; s > 0; s--) {
+    if (eta) eta.textContent = `Rate limited — resuming in ${s}s…`;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+
+function updateScanEta(done, total) {
+  const eta     = document.getElementById("scanEta");
+  if (!eta || !done) return;
+  const activeSec = _getActiveElapsedSec();
+  if (activeSec < 1) return; // not enough data yet
+  const rate      = done / activeSec;
+  const remaining = rate > 0 ? Math.ceil((total - done) / rate) : null;
+  if (remaining === null) return;
+  eta.textContent = remaining > 60
+    ? `~${Math.ceil(remaining / 60)} min remaining`
+    : `~${remaining}s remaining`;
+}
+
+// ── Fetch path A: registration report endpoint ────────────────────────────────
+// Single paginated bulk call — returns all tenant users' method data at once.
+// Permission already held: AuditLog.Read.All satisfies this endpoint.
+async function fetchViaReportEndpoint(expectedUsers) {
+  const REPORT_URL = "https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$select=id,methodsRegistered&$top=999";
+  const map        = new Map();
+  let   next       = REPORT_URL;
+  let   page       = 0;
+  const estPages   = Math.max(1, Math.ceil(expectedUsers / 999));
+
+  while (next) {
+    if (_cancelled) break;
+    page++;
+    const pct = Math.min(95, Math.round((page / estPages) * 100));
+    updateScanLabel(`Fetching registration data… page ${page} of ~${estPages}`, pct);
+
+    const data = await graphWithRetry(() => ITTools.graph.get(next));
+    for (const record of (data?.value || [])) {
+      // Convert report string names → @odata.type keys used by MFA_METHODS
+      const types = (record.methodsRegistered || [])
+        .map(m => REPORT_METHOD_MAP[m])
+        .filter(Boolean);
+      map.set(record.id, types);
+    }
+    next = data?.["@odata.nextLink"] || null;
+  }
+
+  // If the map covers fewer than 30% of the expected users the report endpoint
+  // likely doesn't have data for this scope — throw to trigger $batch fallback.
+  if (map.size < expectedUsers * 0.3) {
+    throw new Error(`Report endpoint returned ${map.size} records for ${expectedUsers} expected users — insufficient coverage`);
+  }
+
+  updateScanLabel(`Registration data loaded — ${map.size.toLocaleString()} records`, 100);
+  return map;
+}
+
+// ── Fetch path B: Graph $batch (20 sub-requests per HTTP call) ────────────────
+// Pass 1: batch all users 20 at a time — fast for the majority.
+// Pass 2: any sub-request that returned 429/error gets retried individually
+//         via graphWithRetry so throttled accounts still resolve correctly.
+async function fetchViaBatch(users) {
+  const map       = new Map();
+  const BATCH     = 20;
+  const total     = users.length;
+  const startTime = Date.now();
+  _resetActiveTimer();
+  const retryQueue = []; // users whose batch sub-request failed
+
+  // ── Pass 1: batch ──────────────────────────────────────────────────────────
+  for (let i = 0; i < total; i += BATCH) {
+    if (_cancelled) break;
+
+    const slice    = users.slice(i, i + BATCH);
+    const requests = slice.map((u, idx) => ({
+      id:     String(idx),
+      method: "GET",
+      url:    `/users/${u.id}/authentication/methods`,
+    }));
+
+    let response;
+    try {
+      response = await graphWithRetry(() =>
+        ITTools.graph.post("https://graph.microsoft.com/v1.0/$batch", { requests })
+      );
+    } catch(_) {
+      // Outer POST itself failed — queue the whole slice for per-user retry
+      retryQueue.push(...slice);
+      continue;
+    }
+
+    for (const resp of (response?.responses || [])) {
+      const user = slice[parseInt(resp.id)];
+      if (!user) continue;
+      if (resp.status === 200 && resp.body?.value) {
+        const types = resp.body.value
+          .map(m => m["@odata.type"])
+          .filter(t => t && t !== PASSWORD_ONLY_TYPE);
+        map.set(user.id, types);
+      } else {
+        // 429, 503, 404 (deleted), or any other non-200 — queue for retry
+        retryQueue.push(user);
+      }
+    }
+
+    const done    = Math.min(i + BATCH, total);
+    const elapsed = (Date.now() - startTime) / 1000;
+    // Progress reflects batch pass only (0–80%) — retry pass fills the rest
+    const pct     = Math.round((done / total) * 80);
+    updateScanLabel(`Batch scan: ${done.toLocaleString()} / ${total.toLocaleString()} users`, pct);
+    updateScanEta(done, total);
+  }
+
+  // ── Pass 2: per-user retry for anything the batch throttled ───────────────
+  if (retryQueue.length > 0 && !_cancelled) {
+    const retryTotal = retryQueue.length;
+    const RETRY_BATCH = 15;
+    updateScanLabel(`Retrying ${retryTotal.toLocaleString()} throttled account${retryTotal !== 1 ? "s" : ""}…`, 80);
+
+    for (let i = 0; i < retryTotal; i += RETRY_BATCH) {
+      if (_cancelled) break;
+
+      const slice = retryQueue.slice(i, i + RETRY_BATCH);
+      await Promise.all(slice.map(async u => {
+        try {
+          const methods = await graphWithRetry(() =>
+            ITTools.graph.get(`https://graph.microsoft.com/v1.0/users/${u.id}/authentication/methods`)
+          );
+          const types = (methods.value || [])
+            .map(m => m["@odata.type"])
+            .filter(t => t && t !== PASSWORD_ONLY_TYPE);
+          map.set(u.id, types);
+        } catch(_) {
+          map.set(u.id, null); // genuinely unresolvable — deleted or no permission
+        }
+      }));
+
+      const retryDone = Math.min(i + RETRY_BATCH, retryTotal);
+      const pct       = 80 + Math.round((retryDone / retryTotal) * 20);
+      updateScanLabel(`Retrying throttled accounts: ${retryDone.toLocaleString()} / ${retryTotal.toLocaleString()}`, pct);
+    }
+  }
+
+  return map;
+}
+
+// ── Fetch path C: per-user calls (15 concurrent) ─────────────────────────────
+// Original approach, retained as final fallback. BATCH raised from 5 → 15.
+async function fetchPerUser(users) {
+  const map       = new Map();
+  const BATCH     = 15;
+  const total     = users.length;
+  const startTime = Date.now();
+  _resetActiveTimer();
+
+  for (let i = 0; i < total; i += BATCH) {
+    if (_cancelled) break;
+
+    const slice        = users.slice(i, i + BATCH);
+    const batchResults = await Promise.all(slice.map(async u => {
+      try {
+        const methods = await graphWithRetry(() =>
+          ITTools.graph.get(`https://graph.microsoft.com/v1.0/users/${u.id}/authentication/methods`)
+        );
+        return { id: u.id, types: (methods.value || []).map(m => m["@odata.type"]).filter(t => t && t !== PASSWORD_ONLY_TYPE) };
+      } catch(_) {
+        return { id: u.id, types: null };
+      }
+    }));
+
+    for (const { id, types } of batchResults) map.set(id, types);
+
+    const done    = Math.min(i + BATCH, total);
+    const elapsed = (Date.now() - startTime) / 1000;
+    const pct     = Math.round((done / total) * 100);
+    updateScanLabel(`Scanning: ${done.toLocaleString()} / ${total.toLocaleString()} users`, pct);
+    updateScanEta(done, total);
+  }
+
+  return map;
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function renderStats(users, isDisabled) {
+  const total    = users.length;
+  const strong   = users.filter(u => u.riskLevel === 0).length;
+  const weak     = users.filter(u => u.riskLevel === 1).length;
+  const none     = users.filter(u => u.riskLevel === 2).length;
+  const errors   = users.filter(u => u.error).length;
+  const coverage = total > 0 ? Math.round((strong / total) * 100) : 0;
+
+  let html =
+    sc("blue",  isDisabled ? "Disabled accounts" : "Users scanned", total, null) +
+    sc("green", "Strong MFA",  strong, coverage + "% coverage") +
+    sc("amber", "Weak method", weak,   "needs improvement") +
+    sc("red",   "No MFA",      none,   "highest risk");
+
+  if (isDisabled) {
+    const licensed = users.filter(u => u.hasLicense).length;
+    if (licensed > 0) html += sc("amber", "Have licenses", licensed, "cost recovery opportunity");
+  }
+
+  if (errors > 0) html += sc("gray", "Scan errors", errors, "could not retrieve");
+
+  const row = document.getElementById("statsRow");
+  row.innerHTML     = html;
+  row.style.display = "flex";
+}
+
+function sc(c, l, v, s) {
+  return `<div class="stat ${c}"><div class="stat-label">${l}</div><div class="stat-value">${v}</div>${s ? `<div class="stat-sub">${s}</div>` : ""}</div>`;
+}
+
+// ── Risk bar ──────────────────────────────────────────────────────────────────
+function renderRiskBar(users) {
+  const total  = users.length || 1;
+  const strong = users.filter(u => u.riskLevel === 0).length;
+  const weak   = users.filter(u => u.riskLevel === 1).length;
+  const none   = users.filter(u => u.riskLevel === 2).length;
+
+  document.getElementById("rbStrong").style.width = ((strong/total)*100).toFixed(1) + "%";
+  document.getElementById("rbWeak").style.width   = ((weak/total)*100).toFixed(1)   + "%";
+  document.getElementById("rbNone").style.width   = ((none/total)*100).toFixed(1)   + "%";
+  document.getElementById("rbPct").textContent    = Math.round((strong/total)*100) + "% strong MFA";
+  document.getElementById("riskCard").style.display = "block";
+}
+
+// ── Method filter ─────────────────────────────────────────────────────────────
+function renderMethodFilter(users) {
+  const seen = new Set();
+  users.forEach(u => u.methodTypes.forEach(t => seen.add(t)));
+  seen.add(PASSWORD_ONLY_TYPE);
+
+  const grid = document.getElementById("methodGrid");
+  grid.innerHTML = [...seen].map(type => {
+    const info       = getMethodInfo(type);
+    const isPassword = type === PASSWORD_ONLY_TYPE;
+    return `
+      <label class="method-check" id="mc-${btoa(type).replace(/=/g,'')}" onclick="toggleMethod('${type}', this)">
+        <input type="checkbox" onchange="toggleMethod('${type}', this.closest('.method-check'))"/>
+        <span class="method-icon">${info.icon}</span>
+        <div>
+          <div class="method-label">${isPassword ? "No MFA (password only)" : info.label}</div>
+          <div class="method-sub">${info.sub}</div>
+        </div>
+      </label>`;
+  }).join("");
+
+  document.getElementById("filterCard").style.display = "block";
+  updateFilterNote();
+}
+
+function toggleMethod(type, el) {
+  if (event.target.tagName === "INPUT") {
+    if (event.target.checked) flaggedMethods.add(type);
+    else flaggedMethods.delete(type);
+  } else {
+    if (flaggedMethods.has(type)) { flaggedMethods.delete(type); }
+    else { flaggedMethods.add(type); }
+    el.querySelector("input").checked = flaggedMethods.has(type);
+  }
+  el.classList.toggle("selected", flaggedMethods.has(type));
+  updateFilterNote();
+  applyMethodFilter();
+}
+
+function selectWeakDefaults() {
+  const weakDefaults = [
+    "#microsoft.graph.phoneAuthenticationMethod",
+    "#microsoft.graph.emailAuthenticationMethod",
+    "#microsoft.graph.softwareOathAuthenticationMethod",
+    PASSWORD_ONLY_TYPE,
+  ];
+  flaggedMethods = new Set(weakDefaults);
+  document.querySelectorAll(".method-check").forEach(el => {
+    const input = el.querySelector("input");
+    const type  = weakDefaults.find(t => el.id === `mc-${btoa(t).replace(/=/g,'')}`);
+    const sel   = !!type;
+    input.checked = sel;
+    el.classList.toggle("selected", sel);
+  });
+  updateFilterNote();
+  applyMethodFilter();
+}
+
+function clearMethodFilter() {
+  flaggedMethods = new Set();
+  document.querySelectorAll(".method-check").forEach(el => {
+    el.querySelector("input").checked = false;
+    el.classList.remove("selected");
+  });
+  updateFilterNote();
+  applyMethodFilter();
+}
+
+function updateFilterNote() {
+  const note = document.getElementById("filterNote");
+  if (flaggedMethods.size === 0) {
+    note.textContent = "No methods flagged — showing all users";
+  } else {
+    const flagged = allUsers.filter(u => isUserFlagged(u)).length;
+    note.textContent = `${flagged} user${flagged !== 1 ? "s" : ""} flagged with selected method${flaggedMethods.size !== 1 ? "s" : ""}`;
+  }
+}
+
+function isUserFlagged(u) {
+  if (flaggedMethods.size === 0) return false;
+  if (u.hasNone && flaggedMethods.has(PASSWORD_ONLY_TYPE)) return true;
+  if (u.methodTypes.some(t => flaggedMethods.has(t)) && !u.hasStrong) return true;
+  return false;
+}
+
+function applyMethodFilter() {
+  const rows = document.querySelectorAll("#mfaBody tr");
+  rows.forEach(tr => {
+    const userId = tr.dataset.userid;
+    const user   = allUsers.find(u => u.id === userId);
+    if (!user) return;
+    if (flaggedMethods.size === 0) {
+      tr.style.display = "";
+      tr.style.outline = "";
+      return;
+    }
+    tr.style.display = isUserFlagged(user) ? "" : "none";
+  });
+  const q = document.querySelector('input[type="search"]')?.value?.toLowerCase() || "";
+  if (q) filterTbl(q);
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+function renderTable(users, isDisabled) {
+  const sec = document.getElementById("tableSection");
+  if (!users.length) {
+    sec.innerHTML = `<div class="card"><div class="empty-state">
+      <div class="empty-icon">✅</div>
+      <div class="empty-title">No users found</div>
+    </div></div>`;
+    return;
+  }
+
+  const sorted = sortUsers(users);
+
+  sec.innerHTML = `
+    <div class="tbl-wrap">
+      <div class="tbl-toolbar">
+        <span class="tbl-title">MFA report
+          <span class="status-pill pill-wouldadd" style="margin-left:6px">${users.length} ${isDisabled ? "disabled accounts" : "users"}</span>
+        </span>
+        <div class="tbl-actions">
+          <input type="search" placeholder="Filter by name, email, dept…"
+            style="width:220px;font-size:12px;padding:5px 9px" oninput="filterTbl(this.value)"/>
+          <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="exportCsv()">Export CSV</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr>
+          ${th("User","displayName")}
+          ${th("Department","department")}
+          ${th("Risk","riskLevel")}
+          ${th("Registered methods","methodTypes")}
+          ${isDisabled ? th("Licenses","hasLicense") : ""}
+          ${th("Job title","jobTitle")}
+        </tr></thead>
+        <tbody id="mfaBody">${sorted.map(u => userRow(u, isDisabled)).join("")}</tbody>
+      </table>
+    </div>`;
+}
+
+function th(label, col) {
+  const active = sortCol === col ? " style='background:var(--surface3)'" : "";
+  const arrow  = sortCol === col ? (sortDir === -1 ? " ↓" : " ↑") : " ↕";
+  return `<th onclick="sortBy('${col}')"${active}>${label}<span style="opacity:.4;margin-left:3px">${arrow}</span></th>`;
+}
+
+function userRow(u, isDisabled) {
+  const init2  = (u.displayName || "?").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+  const rClass = isDisabled ? "disabled-acc" : (u.riskLevel === 2 ? "high" : u.riskLevel === 1 ? "medium" : "low");
+
+  let riskBadge, riskLabel;
+  if      (u.riskLevel === 2) { riskBadge = "risk-high";   riskLabel = "No MFA"; }
+  else if (u.riskLevel === 1) { riskBadge = "risk-medium"; riskLabel = "Weak"; }
+  else                        { riskBadge = "risk-low";    riskLabel = "Strong"; }
+
+  let methodPills;
+  if (u.hasNone) {
+    methodPills = `<span class="mfa-pill mfa-none">🔒 Password only</span>`;
+  } else {
+    methodPills = u.methodTypes.map(t => {
+      const info = getMethodInfo(t);
+      const cls  = info.strength === "strong" ? "mfa-strong" : info.strength === "weak" ? "mfa-weak" : "mfa-unknown";
+      return `<span class="mfa-pill ${cls}">${info.icon} ${info.label}</span>`;
+    }).join("");
+  }
+
+  // Licenses column — only rendered in disabled accounts mode
+  const licenseCell = isDisabled
+    ? `<td>${u.hasLicense
+        ? `<span class="acct-disabled">Has license</span>`
+        : `<span style="font-size:12px;color:var(--muted)">None</span>`
+      }</td>`
+    : "";
+
+  const search = (u.displayName + " " + u.upn + " " + u.department + " " + u.jobTitle).toLowerCase();
+
+  return `<tr data-search="${search}" data-userid="${u.id}">
+    <td><div class="user-cell">
+      <div class="avatar ${rClass}">${init2}</div>
+      <div><div class="user-name">${u.displayName || "Unknown"}</div><div class="user-upn">${u.upn}</div></div>
+    </div></td>
+    <td style="font-size:12px;color:var(--muted)">${u.department || "—"}</td>
+    <td><span class="${riskBadge}">${riskLabel}</span></td>
+    <td style="max-width:320px">${methodPills}</td>
+    ${licenseCell}
+    <td style="font-size:12px;color:var(--muted)">${u.jobTitle || "—"}</td>
+  </tr>`;
+}
+
+function sortBy(col) {
+  sortDir = sortCol === col ? sortDir * -1 : -1;
+  sortCol = col;
+  const b          = document.getElementById("mfaBody");
+  const isDisabled = document.getElementById("scopeSelect").value === "disabled";
+  if (b) {
+    b.innerHTML = sortUsers(allUsers).map(u => userRow(u, isDisabled)).join("");
+    applyMethodFilter();
+    filterTbl(document.querySelector('input[type="search"]')?.value || "");
+  }
+}
+
+function sortUsers(users) {
+  return [...users].sort((a, b) => {
+    if (sortCol === "riskLevel")   return sortDir * (b.riskLevel - a.riskLevel);
+    if (sortCol === "methodTypes") return sortDir * (a.methodTypes.length - b.methodTypes.length);
+    if (sortCol === "hasLicense")  return sortDir * ((a.hasLicense ? 1 : 0) - (b.hasLicense ? 1 : 0));
+    const av = a[sortCol] || "", bv = b[sortCol] || "";
+    return sortDir * av.toString().toLowerCase().localeCompare(bv.toString().toLowerCase());
+  });
+}
+
+function filterTbl(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll("#mfaBody tr").forEach(tr => {
+    if (tr.style.display === "none" && flaggedMethods.size > 0) return;
+    tr.style.display = tr.dataset.search.includes(q) ? "" : "none";
+  });
+}
+
+function exportCsv() {
+  if (!allUsers.length) return;
+  const isDisabled = document.getElementById("scopeSelect").value === "disabled";
+  ITTools.csv.download(
+    "MFA_Status_Report_" + new Date().toISOString().slice(0, 10) + ".csv",
+    allUsers.map(u => ({
+      "Display Name":   u.displayName,
+      "UPN":            u.upn,
+      "Department":     u.department,
+      "Job Title":      u.jobTitle,
+      "Account Status": u.accountEnabled ? "Enabled" : "Disabled",
+      ...(isDisabled ? { "Has License": u.hasLicense ? "Yes" : "No" } : {}),
+      "Risk Level":     u.riskLevel === 2 ? "High (No MFA)" : u.riskLevel === 1 ? "Medium (Weak)" : "Low (Strong)",
+      "Has Strong MFA": u.hasStrong ? "Yes" : "No",
+      "Has Weak MFA":   u.hasWeak   ? "Yes" : "No",
+      "No MFA":         u.hasNone   ? "Yes" : "No",
+      "Methods":        u.hasNone ? "Password only" : u.methodTypes.map(t => getMethodInfo(t).label).join("; "),
+      "Flagged":        isUserFlagged(u) ? "Yes" : "No",
+    }))
+  );
+}
+
+init();
+</script>
+</body>
+</html>

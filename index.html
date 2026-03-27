@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>IT Tools — M365 Admin Hub</title>
+<script src="shared/msal-browser.min.js"></script>
+<script src="shared/auth.js"></script>
+<link rel="stylesheet" href="shared/styles.css"/>
+<style>
+/* ── Hub topbar (unique: has sign-in btn + GitHub link) ── */
+.hub-topbar {
+  height: var(--topbar-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 1.5rem;
+  position: sticky; top: 0; z-index: 100;
+}
+.hub-brand { display: flex; align-items: center; gap: 10px; }
+.hub-brand-icon {
+  width: 30px; height: 30px; border-radius: 7px;
+  background: var(--blue-light);
+  display: flex; align-items: center; justify-content: center;
+}
+.hub-brand-name { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.hub-brand-tag {
+  font-size: 10px; font-weight: 500; color: var(--blue-mid);
+  background: var(--blue-light); padding: 2px 8px; border-radius: 10px;
+}
+.hub-topbar-right { display: flex; align-items: center; gap: 8px; }
+
+.btn-signin {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 13px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: transparent;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  cursor: pointer; font-family: inherit; transition: all .12s; white-space: nowrap;
+}
+.btn-signin:hover { background: var(--blue-light); color: var(--blue-dark); border-color: var(--blue); }
+.btn-signin.loading { opacity: .55; pointer-events: none; }
+
+/* Overrides shared/styles.css .user-chip (which defaults to display:flex) —
+   hub uses display:none + .show toggle for sign-in state management */
+.user-chip {
+  display: none; align-items: center; gap: 7px;
+  background: var(--surface3); border-radius: 20px;
+  padding: 3px 10px 3px 4px; font-size: 12px; font-weight: 500;
+}
+.user-chip.show { display: flex; }
+.user-avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--amber-light); color: var(--amber);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700;
+}
+.btn-signout {
+  display: none; padding: 5px 11px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: transparent;
+  font-size: 12px; font-weight: 500; color: var(--muted);
+  cursor: pointer; font-family: inherit; transition: all .12s;
+}
+.btn-signout.show { display: block; }
+.btn-signout:hover { background: var(--red-light); color: var(--red); border-color: var(--red-border); }
+
+/* ── Page shell ── */
+.hub-shell { max-width: 860px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+
+/* ── Slim title bar ── */
+.hub-title-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+.hub-title-bar h1 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+.hub-count-pill {
+  font-size: 12px; color: var(--muted);
+  background: var(--surface3); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px 12px;
+}
+
+/* ── Tools grid — 2 columns ── */
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px; margin-bottom: 2rem;
+}
+@media (max-width: 600px) { .tools-grid { grid-template-columns: 1fr; } }
+
+/* ── Tool card ── */
+.tool-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1.1rem;
+  cursor: pointer; text-decoration: none; color: inherit;
+  display: block; position: relative; overflow: hidden;
+  transition: border-color .15s, box-shadow .15s;
+}
+.tool-card:hover { border-color: var(--border-mid); box-shadow: var(--shadow-md); text-decoration: none; }
+.tool-card.no-hover { cursor: default; }
+.tool-card.no-hover:hover { transform: none; box-shadow: none; border-color: var(--border); }
+.tool-card.locked { border-style: dashed; cursor: default; }
+.tool-card.locked:hover { transform: none; box-shadow: none; border-color: var(--border); }
+.tool-card.locked:hover .tool-desc { opacity: 0; } /* keep lock-hint visible, not desc */
+
+/* ── Corner ribbon ── */
+.tool-ribbon {
+  position: absolute; top: 0; right: 0;
+  border-radius: 0 12px 0 6px;
+  padding: 3px 9px; font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+.ribbon-live    { background: var(--green-light);  color: var(--green); }
+.ribbon-beta    { background: var(--blue-light);   color: var(--blue-dark); }
+.ribbon-soon    { background: var(--surface3);     color: var(--muted2); }
+.ribbon-finance { background: var(--amber-light);  color: var(--amber); }
+
+/* ── Card body ── */
+.tool-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; font-size: 18px;
+  background: var(--icon-bg, var(--blue-light));
+  margin-bottom: 10px;
+}
+.tool-name { font-size: 14px; font-weight: 700; }
+.tool-desc {
+  position: absolute; inset: 0; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border-mid);
+  padding: 1rem; font-size: 12px; color: var(--muted); line-height: 1.6;
+  display: flex; align-items: center;
+  opacity: 0; transition: opacity .15s; pointer-events: none;
+}
+.tool-card:hover .tool-desc { opacity: 1; }
+.lock-hint {
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted2);
+}
+
+/* ── Coming-soon frosted overlay ── */
+.tool-overlay {
+  position: absolute; inset: 0; border-radius: 12px;
+  background: rgba(248, 250, 252, 0.50);
+  backdrop-filter: blur(0.5px);
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+[data-theme="dark"] .tool-overlay { background: rgba(26, 29, 39, 0.55); }
+.tool-overlay-pill {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 14px;
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  pointer-events: none;
+}
+
+/* ── Skeleton ── */
+.skeleton-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; height: 110px;
+  animation: hub-shimmer 1.5s infinite;
+}
+@keyframes hub-shimmer { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
+/* ── Section label ── */
+.section-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted2); margin-bottom: 1rem; padding-left: 2px;
+}
+
+/* ── Setup card ── */
+.setup-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.25rem;
+  font-size: 13px; line-height: 1.7; color: var(--muted);
+}
+.setup-card strong { color: var(--text); }
+.setup-uri {
+  font-family: 'Cascadia Code','Consolas',monospace; font-size: 12px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 12px; color: var(--text);
+  word-break: break-all; margin: .75rem 0;
+}
+
+/* ── Footer ── */
+.hub-footer {
+  border-top: 1px solid var(--border); padding: 1.5rem;
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 860px; margin: 0 auto;
+  font-size: 12px; color: var(--muted2); flex-wrap: wrap; gap: 10px;
+}
+.footer-links { display: flex; gap: 16px; }
+.footer-links a { color: var(--muted2); text-decoration: none; }
+.footer-links a:hover { color: var(--blue-mid); }
+</style>
+</head>
+<body>
+
+<div class="hub-topbar">
+  <div class="hub-brand">
+    <div class="hub-brand-icon">
+      <svg viewBox="0 0 23 23" width="18" height="18" fill="none">
+        <rect x="1"  y="1"  width="10" height="10" fill="#f25022"/>
+        <rect x="12" y="1"  width="10" height="10" fill="#7fba00"/>
+        <rect x="1"  y="12" width="10" height="10" fill="#00a4ef"/>
+        <rect x="12" y="12" width="10" height="10" fill="#ffb900"/>
+      </svg>
+    </div>
+    <span class="hub-brand-name">IT Tools</span>
+    <span class="hub-brand-tag">M365 Admin Hub</span>
+  </div>
+
+  <div class="hub-topbar-right">
+    <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"></svg>
+    </button>
+    <a href="https://github.com/jgdev-ch/it-tools" target="_blank" class="btn-icon" title="GitHub repository">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+        <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+      </svg>
+    </a>
+
+    <!-- User chip — visible after sign-in -->
+    <div class="user-chip" id="userChip">
+      <div class="user-avatar" id="userInitials"></div>
+      <span id="userName"></span>
+    </div>
+
+    <!-- Sign out — visible after sign-in -->
+    <button class="btn-signout" id="signOutBtn" onclick="hubSignOut()">Sign out</button>
+
+    <!-- Sign in — visible when signed out -->
+    <button class="btn-signin" id="signInBtn" onclick="hubSignIn()">
+      <svg viewBox="0 0 21 21" width="13" height="13" fill="none">
+        <rect x="1"  y="1"  width="9" height="9" fill="#f25022"/>
+        <rect x="11" y="1"  width="9" height="9" fill="#7fba00"/>
+        <rect x="1"  y="11" width="9" height="9" fill="#00a4ef"/>
+        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+      </svg>
+      Sign in
+    </button>
+  </div>
+</div>
+
+<div class="hub-shell">
+  <div class="hub-title-bar">
+    <h1>IT Tools Hub</h1>
+    <span class="hub-count-pill" id="toolCountPill">Loading…</span>
+  </div>
+
+  <div class="tools-grid" id="toolsGrid">
+    <div class="skeleton-card"></div>
+    <div class="skeleton-card"></div>
+  </div>
+
+  <div class="section-label">Setup</div>
+  <div class="setup-card">
+    <p>All tools share a single <strong>Entra ID app registration</strong>. Add the following redirect URI to your app under <em>Authentication → Single-page application</em>:</p>
+    <div class="setup-uri" id="baseUri"></div>
+    <p>Each tool will automatically use its own sub-path as the redirect URI. You only need one registration for the whole hub.</p>
+  </div>
+</div>
+
+<footer class="hub-footer">
+  <span>Built by Josh Garrett · <a href="https://github.com/jgdev-ch/it-tools" style="color:var(--muted2)">github.com/jgdev-ch/it-tools</a></span>
+  <div class="footer-links">
+    <a href="https://learn.microsoft.com/en-us/graph/overview" target="_blank">Graph API docs</a>
+    <a href="https://portal.azure.com" target="_blank">Entra admin</a>
+    <a href="https://github.com/jgdev-ch/it-tools/issues" target="_blank">Report an issue</a>
+  </div>
+</footer>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────────
+// Auth handled by shared/auth.js (ITTools.auth) — same MSAL config as all tool pages.
+
+// Scopes needed by any tool reachable from the hub.
+// Requesting them here means the finance dashboard can acquire tokens silently
+// (no second sign-in popup) because the access token is already cached.
+const HUB_TOOL_SCOPES = ["User.Read.All", "AuditLog.Read.All", "Directory.Read.All"];
+
+// Group gates — keyed by the config `financeOnly` / `requiredGroup` field.
+// Add new group Object IDs here as more gated tools are built.
+const GROUP_GATES = {
+  "finance": {
+    id:       "ff9c3232-251f-4570-9564-340039d17aa9",
+    localKey: "it-tools-finance-unlocked",
+  }
+};
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
+function initTheme() {
+  const saved = localStorage.getItem("it-tools-theme") ||
+    (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  applyTheme(saved);
+}
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  localStorage.setItem("it-tools-theme", t);
+  syncThemeIcon(t);
+}
+function toggleTheme() {
+  applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+}
+function syncThemeIcon(t) {
+  const el = document.getElementById("themeIcon");
+  el.innerHTML = t === "dark"
+    ? `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" fill="none"/>`
+    : `<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>`;
+}
+
+// ── Topbar state ──────────────────────────────────────────────────────────────
+function showSignedIn(account) {
+  const name     = account?.name || account?.username || "";
+  const initials = name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "ME";
+  document.getElementById("userInitials").textContent = initials;
+  document.getElementById("userName").textContent     = name;
+  document.getElementById("userChip").classList.add("show");
+  document.getElementById("signOutBtn").classList.add("show");
+  document.getElementById("signInBtn").style.display  = "none";
+}
+function showSignedOut() {
+  document.getElementById("userChip").classList.remove("show");
+  document.getElementById("signOutBtn").classList.remove("show");
+  document.getElementById("signInBtn").style.display  = "";
+}
+
+// ── Card HTML builders ────────────────────────────────────────────────────────
+
+const RIBBON_LABELS = { "live":"Live", "beta":"Beta", "coming-soon":"Soon", "in-development":"Dev", "deprecated":"Depr." };
+const RIBBON_CLASS  = { "live":"ribbon-live", "beta":"ribbon-beta", "coming-soon":"ribbon-soon", "in-development":"ribbon-soon", "deprecated":"ribbon-soon" };
+
+function ribbonHtml(status) {
+  const cls   = RIBBON_CLASS[status]  || "ribbon-soon";
+  const label = RIBBON_LABELS[status] || status;
+  return `<div class="tool-ribbon ${cls}">${label}</div>`;
+}
+
+function buildLockedCard({ gateKey, path, iconBg, icon, status, name, desc, perms }) {
+  const permsStr = (perms || []).join("|");
+  return `<div class="tool-card locked" id="gate-${gateKey}"
+      data-path="${path}" data-iconbg="${iconBg}"
+      data-icon="${icon}" data-status="${status}"
+      data-name="${name}" data-desc="${desc}" data-perms="${permsStr}"
+      style="--icon-bg:${iconBg}">
+    <div class="tool-ribbon ribbon-finance">Finance</div>
+    <div class="tool-icon">${icon}</div>
+    <div class="tool-name">${name}</div>
+    <div class="tool-desc">${desc}</div>
+    <div class="lock-hint">🔒 Sign in to unlock if you have access</div>
+  </div>`;
+}
+
+function buildLiveCard({ path, accent, iconBg, icon, status, name, desc }) {
+  return `<a class="tool-card" href="${path}" style="--icon-bg:${iconBg}">
+    ${ribbonHtml(status)}
+    <div class="tool-icon">${icon}</div>
+    <div class="tool-name">${name}</div>
+    <div class="tool-desc">${desc}</div>
+  </a>`;
+}
+
+// ── Card lock / unlock ────────────────────────────────────────────────────────
+function unlockCard(gateKey) {
+  const locked = document.getElementById(`gate-${gateKey}`);
+  if (!locked) return;
+
+  locked.outerHTML = buildLiveCard({
+    path:   locked.dataset.path,
+    iconBg: locked.dataset.iconbg,
+    icon:   locked.dataset.icon,
+    status: locked.dataset.status,
+    name:   locked.dataset.name,
+    desc:   locked.dataset.desc,
+  });
+}
+
+function lockCard(gateKey) {
+  const meta = _gateCardMeta[gateKey];
+  if (!meta) return;
+  const live = document.querySelector(`a.tool-card[href="${meta.path}"]`);
+  if (!live) return;
+  live.outerHTML = buildLockedCard({
+    gateKey,
+    path:   meta.path,
+    iconBg: meta.iconBg,
+    icon:   meta.icon,
+    status: meta.status,
+    name:   meta.name,
+    desc:   meta.desc,
+    perms:  meta.perms,
+  });
+}
+
+// Populated during loadTools() so lockCard() has the data it needs on sign-out
+const _gateCardMeta = {};
+
+// ── Group membership check (checkMemberObjects — one call, no pagination) ─────
+async function checkMembership(token, groupId) {
+  try {
+    const res = await fetch("https://graph.microsoft.com/v1.0/me/checkMemberObjects", {
+      method:  "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body:    JSON.stringify({ ids: [groupId] }),
+    });
+    if (!res.ok) return false;
+    return (await res.json()).value?.includes(groupId) ?? false;
+  } catch(_) { return false; }
+}
+
+// ── Run all gate checks after sign-in ─────────────────────────────────────────
+async function runGateChecks(token) {
+  for (const [gateKey, gate] of Object.entries(GROUP_GATES)) {
+    const isMember = await checkMembership(token, gate.id);
+    if (isMember) {
+      localStorage.setItem(gate.localKey, "true");
+      unlockCard(gateKey);
+    }
+  }
+}
+
+// ── Restore locks from localStorage (instant, no network) ────────────────────
+function restoreFromLocalStorage() {
+  for (const [gateKey, gate] of Object.entries(GROUP_GATES)) {
+    if (localStorage.getItem(gate.localKey) === "true") {
+      unlockCard(gateKey);
+    }
+  }
+}
+
+// ── Clear all gate flags on sign-out ─────────────────────────────────────────
+function clearAllGates() {
+  for (const [gateKey, gate] of Object.entries(GROUP_GATES)) {
+    localStorage.removeItem(gate.localKey);
+    lockCard(gateKey);
+  }
+}
+
+// ── Hub sign-in ───────────────────────────────────────────────────────────────
+async function hubSignIn() {
+  const btn = document.getElementById("signInBtn");
+  btn.classList.add("loading");
+  btn.textContent = "Signing in…";
+
+  try {
+    const acct  = await ITTools.auth.signIn();
+    showSignedIn(acct);
+    const token = await ITTools.auth.getToken();
+    await runGateChecks(token);
+  } catch(_) {
+    // User cancelled or popup blocked — silent fail
+  } finally {
+    btn.classList.remove("loading");
+    btn.innerHTML = `
+      <svg viewBox="0 0 21 21" width="13" height="13" fill="none">
+        <rect x="1"  y="1"  width="9" height="9" fill="#f25022"/>
+        <rect x="11" y="1"  width="9" height="9" fill="#7fba00"/>
+        <rect x="1"  y="11" width="9" height="9" fill="#00a4ef"/>
+        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+      </svg>
+      Sign in`;
+  }
+}
+
+// ── Hub sign-out ──────────────────────────────────────────────────────────────
+async function hubSignOut() {
+  try {
+    await ITTools.auth.signOut();
+  } catch(_) {
+    // signOut callback still fires; clear gates regardless
+    clearAllGates();
+    showSignedOut();
+  }
+}
+
+// ── Silent session restore on load ────────────────────────────────────────────
+async function trySilentRestore() {
+  // Uses shared/auth.js so hub and tool pages share the same MSAL cache —
+  // signing in here means tool pages (e.g. Finance Dashboard) won't ask again.
+  let sessionFound = false;
+  await ITTools.auth.init({
+    scopes: HUB_TOOL_SCOPES,
+    onSignIn: async acct => {
+      sessionFound = true;
+      showSignedIn(acct);
+      try {
+        const token = await ITTools.auth.getToken();
+        await runGateChecks(token);
+      } catch(_) {}
+    },
+    onSignOut: () => {
+      clearAllGates();
+      showSignedOut();
+    }
+  });
+  // No active session — clear any stale localStorage unlock flags and re-lock cards
+  if (!sessionFound) {
+    clearAllGates();
+  }
+}
+
+// ── Render tools from config ──────────────────────────────────────────────────
+async function loadTools() {
+  const grid = document.getElementById("toolsGrid");
+  try {
+    const res  = await fetch("config.json?v=" + Date.now());
+    const data = await res.json();
+    const clickable = ["live", "beta"];
+
+    grid.innerHTML = data.tools.map(tool => {
+      const perms = tool.permissions || [];
+
+      // Gated tool — render locked card and store meta for sign-out re-lock
+      if (tool.financeOnly) {
+        const meta = {
+          path:   tool.path,   iconBg: tool.iconBg,
+          icon:   tool.icon,   status: tool.status, name:   tool.name,
+          desc:   tool.description,                 perms,
+        };
+        _gateCardMeta["finance"] = meta;
+        return buildLockedCard({ gateKey: "finance", ...meta });
+      }
+
+      // Standard clickable tool
+      if (clickable.includes(tool.status) && tool.path) {
+        return buildLiveCard({
+          path: tool.path, accent: tool.accent, iconBg: tool.iconBg,
+          icon: tool.icon, status: tool.status, name:   tool.name,
+          desc: tool.description, perms,
+        });
+      }
+
+      // Non-clickable (coming-soon, in-development, deprecated)
+      const overlayLabel = tool.status === "deprecated" ? "Deprecated"
+        : tool.status === "in-development" ? "In Development"
+        : "Coming Soon";
+      return `<div class="tool-card no-hover" style="--icon-bg:${tool.iconBg}">
+        ${ribbonHtml(tool.status)}
+        <div class="tool-icon">${tool.icon}</div>
+        <div class="tool-name">${tool.name}</div>
+        <div class="tool-desc">${tool.description}</div>
+        <div class="tool-overlay">
+          <div class="tool-overlay-pill">${overlayLabel}</div>
+        </div>
+      </div>`;
+
+    }).join("");
+
+    // 1 — Instant unlock from localStorage (no network)
+    restoreFromLocalStorage();
+
+    // 2 — Silent MSAL restore in background
+    //     Updates topbar user chip and re-validates all gates
+    trySilentRestore();
+
+    // Update title bar count pill
+    const total  = data.tools.length;
+    const active = data.tools.filter(t => t.status === "live" || t.status === "beta").length;
+    const pill   = document.getElementById("toolCountPill");
+    if (pill) pill.textContent = `${total} tools · ${active} active`;
+
+  } catch(e) {
+    grid.innerHTML = `<div style="grid-column:1/-1;padding:2rem;text-align:center;color:var(--muted);font-size:13px">
+      Could not load tools config. Make sure config.json is in the repo root.
+    </div>`;
+    const pill = document.getElementById("toolCountPill");
+    if (pill) pill.textContent = "";
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+document.getElementById("baseUri").textContent = ITTools.auth.redirectUri();
+initTheme();
+loadTools();
+</script>
+</body>
+</html>
