@@ -175,6 +175,23 @@
   font-size: 13px; line-height: 1.7; color: var(--muted);
 }
 .setup-card strong { color: var(--text); }
+
+/* ── Setup toggle (collapsible pill) ── */
+.setup-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 14px 5px 10px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  cursor: pointer; font-family: inherit;
+  transition: border-color .15s, color .15s;
+}
+.setup-toggle:hover { border-color: var(--border-mid); color: var(--text); }
+.setup-toggle.open {
+  border-radius: 8px 8px 0 0; width: 100%;
+  justify-content: flex-start; border-bottom-color: transparent;
+}
+.setup-toggle.open + .setup-card { border-radius: 0 0 var(--radius) var(--radius); border-top: none; }
+.setup-chevron { font-size: 10px; color: var(--muted2); margin-left: auto; }
 .setup-uri {
   font-family: 'Cascadia Code','Consolas',monospace; font-size: 12px;
   background: var(--surface2); border: 1px solid var(--border);
@@ -248,13 +265,19 @@
     <span class="hub-count-pill" id="toolCountPill">Loading…</span>
   </div>
 
-  <div class="tools-grid" id="toolsGrid">
-    <div class="skeleton-card"></div>
-    <div class="skeleton-card"></div>
+  <div id="toolsGrid">
+    <div class="tools-grid">
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+    </div>
   </div>
 
-  <div class="section-label">Setup</div>
-  <div class="setup-card">
+  <button class="setup-toggle" id="setupToggle" onclick="toggleSetup()">
+    <span>⚙️</span>
+    <span>Setup</span>
+    <span class="setup-chevron" id="setupChevron">▾</span>
+  </button>
+  <div class="setup-card" id="setupCard" hidden>
     <p>All tools share a single <strong>Entra ID app registration</strong>. Add the following redirect URI to your app under <em>Authentication → Single-page application</em>:</p>
     <div class="setup-uri" id="baseUri"></div>
     <p>Each tool will automatically use its own sub-path as the redirect URI. You only need one registration for the whole hub.</p>
@@ -500,6 +523,11 @@ async function trySilentRestore() {
 }
 
 // ── Render tools from config ──────────────────────────────────────────────────
+const SECTIONS = [
+  { key: "daily-ops",       label: "Daily Operations" },
+  { key: "reporting-audit", label: "Reporting & Audit" },
+];
+
 async function loadTools() {
   const grid = document.getElementById("toolsGrid");
   try {
@@ -507,30 +535,27 @@ async function loadTools() {
     const data = await res.json();
     const clickable = ["live", "beta"];
 
-    grid.innerHTML = data.tools.map(tool => {
+    // Build card HTML for one tool
+    function cardHtml(tool) {
       const perms = tool.permissions || [];
 
-      // Gated tool — render locked card and store meta for sign-out re-lock
       if (tool.financeOnly) {
         const meta = {
-          path:   tool.path,   iconBg: tool.iconBg,
-          icon:   tool.icon,   status: tool.status, name:   tool.name,
-          desc:   tool.description,                 perms,
+          path: tool.path, iconBg: tool.iconBg, icon: tool.icon,
+          status: tool.status, name: tool.name, desc: tool.description, perms,
         };
         _gateCardMeta["finance"] = meta;
         return buildLockedCard({ gateKey: "finance", ...meta });
       }
 
-      // Standard clickable tool
       if (clickable.includes(tool.status) && tool.path) {
         return buildLiveCard({
           path: tool.path, accent: tool.accent, iconBg: tool.iconBg,
-          icon: tool.icon, status: tool.status, name:   tool.name,
-          desc: tool.description, perms,
+          icon: tool.icon, status: tool.status, name: tool.name,
+          desc: tool.description,
         });
       }
 
-      // Non-clickable (coming-soon, in-development, deprecated)
       const overlayLabel = tool.status === "deprecated" ? "Deprecated"
         : tool.status === "in-development" ? "In Development"
         : "Coming Soon";
@@ -543,8 +568,33 @@ async function loadTools() {
           <div class="tool-overlay-pill">${overlayLabel}</div>
         </div>
       </div>`;
+    }
 
-    }).join("");
+    // Group tools by category; tools with no category go to "other"
+    const grouped = {};
+    for (const tool of data.tools) {
+      const key = tool.category || "other";
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(tool);
+    }
+
+    // Render defined sections first, then any keys not covered by SECTIONS at the end
+    const renderedKeys = new Set(SECTIONS.map(s => s.key));
+    const allSections = [...SECTIONS];
+    for (const key of Object.keys(grouped)) {
+      if (!renderedKeys.has(key)) {
+        allSections.push({ key, label: key === "other" ? "Other" : key });
+      }
+    }
+
+    grid.innerHTML = allSections
+      .filter(s => grouped[s.key]?.length)
+      .map(s => `
+        <div class="section-label">${s.label}</div>
+        <div class="tools-grid">
+          ${grouped[s.key].map(cardHtml).join("")}
+        </div>
+      `).join("");
 
     // 1 — Instant unlock from localStorage (no network)
     restoreFromLocalStorage();
@@ -560,7 +610,7 @@ async function loadTools() {
     if (pill) pill.textContent = `${total} tools · ${active} active`;
 
   } catch(e) {
-    grid.innerHTML = `<div style="grid-column:1/-1;padding:2rem;text-align:center;color:var(--muted);font-size:13px">
+    grid.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--muted);font-size:13px">
       Could not load tools config. Make sure config.json is in the repo root.
     </div>`;
     const pill = document.getElementById("toolCountPill");
@@ -568,9 +618,27 @@ async function loadTools() {
   }
 }
 
+// ── Setup toggle ──────────────────────────────────────────────────────────────
+function toggleSetup() {
+  const open = localStorage.getItem('it-tools-setup-open') === 'true';
+  const next = !open;
+  localStorage.setItem('it-tools-setup-open', String(next));
+  applySetupState(next);
+}
+
+function applySetupState(open) {
+  const btn  = document.getElementById('setupToggle');
+  const card = document.getElementById('setupCard');
+  const chev = document.getElementById('setupChevron');
+  btn.classList.toggle('open', open);
+  card.hidden = !open;
+  chev.textContent = open ? '▴' : '▾';
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 document.getElementById("baseUri").textContent = ITTools.auth.redirectUri();
 initTheme();
+applySetupState(localStorage.getItem('it-tools-setup-open') === 'true');
 loadTools();
 </script>
 </body>
