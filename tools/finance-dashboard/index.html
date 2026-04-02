@@ -7,6 +7,8 @@
 <script src="../../shared/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="../../shared/styles.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   /* ── Local token additions not in shared ── */
   :root {
@@ -23,9 +25,26 @@
   .shell { max-width: 1100px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; }
 
   /* ── Page header ── */
-  .page-header { margin-bottom: 1.5rem; }
-  .page-header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-  .page-header p  { font-size: 13px; color: var(--muted); }
+  .page-header { margin-bottom: 1rem; }
+  .page-header h1 {
+    font-family: 'Syne', 'Open Sans', sans-serif;
+    font-size: 22px; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.02em;
+  }
+  .page-header p { font-size: 13px; color: var(--muted); }
+
+  /* ── Action row ── */
+  .action-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 1.25rem; flex-wrap: wrap;
+  }
+  .action-row .btn-print {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    cursor: pointer; font-family: inherit; transition: all .12s;
+  }
+  .action-row .btn-print:hover { border-color: var(--teal); color: var(--teal); background: var(--teal-light); }
   .finance-badge {
     display: inline-flex; align-items: center; gap: 5px;
     background: var(--amber-light); color: var(--amber);
@@ -64,8 +83,8 @@
   .sku-row:last-child { border-bottom: none; }
   .sku-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .sku-name { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
-  .sku-cost { font-weight: 700; color: var(--amber); white-space: nowrap; }
-  .sku-seats { font-size: 10px; color: var(--muted2); white-space: nowrap; }
+  .sku-cost { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--amber); white-space: nowrap; }
+  .sku-seats { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted2); white-space: nowrap; }
 
   /* ── Callout banner ── */
   .callout {
@@ -96,8 +115,10 @@
   .proj-table-wrap tr:last-child td { border-bottom: none; }
   .proj-table-wrap tr:hover td { background: var(--surface2); }
 
-  /* ── Inactive cost cell ── */
-  .cost-cell { font-size: 12px; font-weight: 700; color: var(--amber); white-space: nowrap; }
+  /* ── Data cells — monospace for all numbers ── */
+  .cost-cell  { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: var(--amber); white-space: nowrap; }
+  .num-cell   { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .date-cell  { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted2); white-space: nowrap; }
 
   /* ── Access denied ── */
   .access-denied {
@@ -112,7 +133,79 @@
   .access-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
   .access-card p  { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 1.5rem; }
 
-  /* ── Inline stat number sizing ── */
+  /* ── KPI cards (terminal style) ── */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 1.25rem;
+  }
+  @media (max-width: 800px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .kpi-row { grid-template-columns: 1fr; } }
+
+  .kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.875rem 1rem;
+    position: relative;
+    overflow: hidden;
+  }
+  /* Colored top accent line */
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 10%; right: 10%;
+    height: 1px;
+  }
+  .kpi-card.kpi-cyan::before   { background: linear-gradient(90deg, transparent, var(--teal), transparent); }
+  .kpi-card.kpi-amber::before  { background: linear-gradient(90deg, transparent, var(--amber), transparent); }
+  .kpi-card.kpi-green::before  { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+  .kpi-card.kpi-rose::before   { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+
+  .kpi-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted2);
+    margin-bottom: 7px;
+  }
+  .kpi-value {
+    font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .kpi-card.kpi-cyan  .kpi-value { color: var(--teal); }
+  .kpi-card.kpi-amber .kpi-value { color: var(--amber); }
+  .kpi-card.kpi-green .kpi-value { color: var(--green); }
+  .kpi-card.kpi-rose  .kpi-value { color: var(--red); }
+
+  /* Glow — dark mode only */
+  [data-theme="dark"] .kpi-card.kpi-cyan  .kpi-value { text-shadow: 0 0 18px rgba(14,116,144,0.5); }
+  [data-theme="dark"] .kpi-card.kpi-amber .kpi-value { text-shadow: 0 0 18px rgba(245,158,11,0.45); }
+  [data-theme="dark"] .kpi-card.kpi-green .kpi-value { text-shadow: 0 0 18px rgba(16,185,129,0.45); }
+  [data-theme="dark"] .kpi-card.kpi-rose  .kpi-value { text-shadow: 0 0 18px rgba(239,68,68,0.4); }
+
+  .kpi-sub {
+    font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+    font-size: 10px;
+    color: var(--muted2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .kpi-trend {
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .kpi-trend.up      { color: var(--red); }
+  .kpi-trend.down    { color: var(--green); }
+  .kpi-trend.neutral { color: var(--muted2); }
+
+  /* Legacy stat-value-md kept for safety */
   .stat-value-md { font-size: 20px !important; }
 
   /* ── Scan summary row ── */
@@ -123,10 +216,152 @@
   .scan-meta-row span { display: flex; align-items: center; gap: 4px; }
   .scan-meta-dot { width: 5px; height: 5px; border-radius: 50%; }
 
+  /* ══════════════════════════════════════════════════════
+     PRINT / PDF
+  ══════════════════════════════════════════════════════ */
+
+  /* Hidden on screen, shown in print */
+  .print-only { display: none; }
+
+  @media print {
+    @page { size: A4 landscape; margin: 1.2cm 1.5cm; }
+
+    /* ── Show / hide ── */
+    .print-only        { display: block !important; }
+    #topbar            { display: none !important; }
+    .action-row        { display: none !important; }
+    .card:has(#loadBtn){ display: none !important; }
+    .page-header       { display: none !important; }
+    .hub-footer        { display: none !important; }
+
+    /* ── Page base ── */
+    body, html { background: #fff !important; color: #0f172a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    /* ── Remove glow effects ── */
+    .kpi-value { text-shadow: none !important; }
+
+    /* ── Print report header ── */
+    .print-report-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding-bottom: 0.6rem;
+      margin-bottom: 0.75rem;
+      border-bottom: 2px solid #0f172a;
+    }
+    .print-report-title {
+      font-family: 'Syne', 'Open Sans', sans-serif;
+      font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.02em;
+      margin-bottom: 2px;
+    }
+    .print-report-meta { font-size: 8px; color: #94a3b8; }
+    .print-report-gen-label { font-size: 7px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; text-align: right; }
+    .print-report-gen-date  { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #475569; text-align: right; }
+
+    /* ── Print KPI row ── */
+    .print-kpi-row {
+      display: grid !important;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 0.75rem;
+    }
+    .print-kpi {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      position: relative;
+      overflow: hidden;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .print-kpi::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 8%; right: 8%; height: 2px;
+    }
+    .print-cyan::before  { background: linear-gradient(90deg, transparent, #0e7490, transparent); }
+    .print-amber::before { background: linear-gradient(90deg, transparent, #d97706, transparent); }
+    .print-green::before { background: linear-gradient(90deg, transparent, #059669, transparent); }
+    .print-rose::before  { background: linear-gradient(90deg, transparent, #dc2626, transparent); }
+
+    .print-kpi-label {
+      font-size: 7px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em;
+      color: #94a3b8; margin-bottom: 4px;
+    }
+    .print-kpi-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px; font-weight: 700; line-height: 1; margin-bottom: 3px;
+    }
+    .print-cyan  .print-kpi-value { color: #0e7490; }
+    .print-amber .print-kpi-value { color: #d97706; }
+    .print-green .print-kpi-value { color: #059669; }
+    .print-rose  .print-kpi-value { color: #dc2626; }
+
+    .print-kpi-sub {
+      font-size: 7px; color: #94a3b8;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .print-kpi-trend { font-size: 7px; font-weight: 700; }
+    .print-kpi-trend.up   { color: #dc2626; }
+    .print-kpi-trend.down { color: #059669; }
+
+    /* ── Hide on-screen KPI row ── */
+    #statsRow    { display: none !important; }
+
+    /* ── Print callout (savings banner) ── */
+    .callout {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      page-break-inside: avoid;
+      margin-bottom: 0.6rem !important;
+      padding: 6px 10px !important;
+      font-size: 11px !important;
+    }
+
+    /* ── Charts ── */
+    .dash-grid-2 { gap: 0.5rem !important; margin-bottom: 0.5rem !important; }
+    .card { box-shadow: none !important; border: 1px solid #e2e8f0 !important; page-break-inside: avoid; }
+    canvas { max-height: 220px !important; }
+
+    /* ── Hide projection controls, projection table, inactive table ── */
+    #projCard .proj-controls { display: none !important; }
+    #projCard .proj-table-wrap { display: none !important; }
+    #projCard #projLegend { display: none !important; }
+    #inactiveCard { display: none !important; }
+
+    /* ── Print footer ── */
+    body::after {
+      content: 'Generated by IT Tools · M365 Admin Hub  ·  Confidential · Finance use only';
+      display: block;
+      position: fixed;
+      bottom: 0.6cm; left: 1.5cm; right: 1.5cm;
+      font-size: 7px;
+      color: #94a3b8;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 4px;
+    }
+  }
+
 </style>
 </head>
 <body>
 
+<!-- ── Print report header — hidden on screen, shown in @media print ── -->
+<div id="printHeader" class="print-only">
+  <div class="print-report-header">
+    <div class="print-report-left">
+      <div class="print-report-title">License Spend Report</div>
+      <div class="print-report-meta">CorroHealth · IT Tools M365 Admin Hub · <span id="printThresholdLabel">90</span>-day inactivity threshold · All departments</div>
+    </div>
+    <div class="print-report-right">
+      <div class="print-report-gen-label">Generated</div>
+      <div class="print-report-gen-date" id="printTimestamp"></div>
+    </div>
+  </div>
+  <!-- KPI row for print — populated by renderStats() -->
+  <div class="print-kpi-row" id="printKpiRow"></div>
+</div>
 <div id="topbar"></div>
 
 
@@ -152,6 +387,20 @@
       <span class="finance-badge">💰 Finance View</span>
     </div>
     <p>Full M365 license spend analysis, seat utilisation, department breakdown, and 12-month cost projections.</p>
+  </div>
+
+  <!-- Action row -->
+  <div class="action-row">
+    <button class="btn-print" id="printBtn">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Print / PDF
+    </button>
+    <button class="btn btn-ghost" id="exportInactiveBtn" onclick="exportInactive()" style="display:none;font-size:12px;padding:6px 14px">
+      Export Inactive CSV ↓
+    </button>
+    <button class="btn btn-ghost" id="exportProjBtn" onclick="exportProjections()" style="display:none;font-size:12px;padding:6px 14px">
+      Export Projections CSV ↓
+    </button>
   </div>
 
   <!-- Configure -->
@@ -181,8 +430,8 @@
 
   <div class="banner error" id="errBanner"></div>
 
-  <!-- Overview stats -->
-  <div class="stats-row" id="statsRow" style="display:none"></div>
+  <!-- KPI cards -->
+  <div class="kpi-row" id="statsRow" style="display:none"></div>
 
   <!-- Callout -->
   <div id="calloutArea"></div>
@@ -363,6 +612,9 @@ async function gwr(fn, max = 5) {
 let _charts = {};
 let _data   = null;  // processed dashboard data
 
+// ── Chart.js global defaults ───────────────────────────────────────────────────
+Chart.defaults.font.family = "'Open Sans', 'Segoe UI', system-ui, sans-serif";
+
 function destroyCharts() {
   Object.values(_charts).forEach(c => c?.destroy());
   _charts = {};
@@ -372,18 +624,19 @@ function destroyCharts() {
 function cd() {
   const dark = document.documentElement.getAttribute("data-theme") === "dark";
   return {
-    text:   dark ? "#94a3b8" : "#6b7280",
-    grid:   dark ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.06)",
-    bg:     dark ? "#1a1d27" : "#ffffff",
-    border: dark ? "#2d3148" : "#dde3ec",
+    text:   dark ? "#64748b" : "#94a3b8",
+    grid:   dark ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.05)",
+    bg:     dark ? "#0c1020" : "#ffffff",
+    border: dark ? "#1e2a3a" : "#e2e8f0",
+    mono:   "'JetBrains Mono', 'Cascadia Code', monospace",
   };
 }
 
-// Fixed palette that works in both themes
+// Terminal accent palette — matches KPI card accent colors
 const PALETTE = [
-  "#1a56db","#047857","#92400e","#5b21b6","#0e7490",
-  "#991b1b","#065f46","#1e40af","#78350f","#4c1d95",
-  "#0c4a6e","#7f1d1d","#064e3b","#1e3a5f","#451a03",
+  "#0e7490","#6366f1","#f59e0b","#10b981","#a78bfa",
+  "#f43f5e","#06b6d4","#d97706","#059669","#818cf8",
+  "#0891b2","#e11d48","#0284c7","#65a30d","#7c3aed",
 ];
 
 // ── Phase helper ───────────────────────────────────────────────────────────────
@@ -551,12 +804,13 @@ function renderAll() {
   const filtered    = deptFilter ? processedUsers.filter(u => u.department === deptFilter) : processedUsers;
   const inactiveU   = filtered.filter(u => u.inactive && u.totalCost > 0);
 
-  const monthly     = skuList.reduce((s, k) => s + k.assignedCost,  0);
-  const waste       = skuList.reduce((s, k) => s + k.wasteCost,     0);
-  const inactiveCost= inactiveU.reduce((s, u) => s + u.totalCost,    0);
-  const saveable    = waste + inactiveCost;
+  const monthly       = skuList.reduce((s, k) => s + k.assignedCost,  0);
+  const waste         = skuList.reduce((s, k) => s + k.wasteCost,     0);
+  const inactiveCost  = inactiveU.reduce((s, u) => s + u.totalCost,    0);
+  const assignedSeats = skuList.reduce((s, k) => s + k.assigned,      0);
+  const totalSeats    = skuList.reduce((s, k) => s + k.total,         0);
 
-  renderStats(monthly, waste, inactiveCost, skuList.length, inactiveU.length, days);
+  renderStats(monthly, waste, inactiveCost, skuList.length, inactiveU.length, days, assignedSeats, totalSeats);
   renderCallout(monthly, waste, inactiveCost, inactiveU.length, days);
   renderDonut(skuList);
   renderUtilisation(skuList);
@@ -570,24 +824,70 @@ function renderAll() {
   document.getElementById("deptCard").style.display    = "block";
   document.getElementById("projCard").style.display    = "block";
   document.getElementById("inactiveCard").style.display= "block";
+
+  // Surface export buttons in the action row once data is available
+  document.getElementById("exportInactiveBtn").style.display = "";
+  document.getElementById("exportProjBtn").style.display     = "";
 }
 
 // Department filter change handler
 function onDeptFilter() { if (_data) { destroyCharts(); renderAll(); } }
 
 // ── Stats row ──────────────────────────────────────────────────────────────────
-function renderStats(monthly, waste, inactive, skuCount, inactiveCount, days) {
-  const annual   = monthly * 12;
-  const saveable = waste + inactive;
+function renderStats(monthly, waste, inactive, skuCount, inactiveCount, days, assignedSeats, totalSeats) {
+  const saveable   = waste + inactive;
+  const utilPct    = totalSeats > 0 ? Math.round(assignedSeats / totalSeats * 100) : 0;
+
   document.getElementById("statsRow").innerHTML =
-    sc("amber",  "Monthly Spend",        fmt(monthly,  true), `across ${skuCount} paid SKUs`) +
-    sc("blue",   "Annual Projection",    fmt(annual,   true), "at current spend rate") +
-    sc("red",    "Unassigned Seat Waste",fmt(waste,    true) + "/mo", "seats paid for, not assigned") +
-    sc("amber",  `Inactive Cost (>${days}d)`, fmt(inactive, true) + "/mo", `${inactiveCount} users`) +
-    sc("green",  "Total Recoverable",    fmt(saveable, true) + "/mo", fmt(saveable * 12, true) + "/yr potential");
+    kpiCard("kpi-cyan",  "Monthly Spend",  fmt(monthly, true),
+      `${skuCount} paid SKUs`, `▲ ${fmt(monthly * 12, true)}/yr`) +
+    kpiCard("kpi-amber", "Active Seats",   assignedSeats.toLocaleString(),
+      `of ${totalSeats.toLocaleString()} total`, `${utilPct}% utilization`) +
+    kpiCard("kpi-green", "Savings Found",  fmt(saveable, true) + "/mo",
+      `${inactiveCount} inactive users`, `▼ ${fmt(saveable * 12, true)}/yr`) +
+    kpiCard("kpi-rose",  `Inactive Cost`,  fmt(inactive, true) + "/mo",
+      `>${days}-day threshold`, `▲ REVIEW`);
+
+  // Also populate the print KPI strip
+  const printRow = document.getElementById("printKpiRow");
+  if (printRow) {
+    const projAnnual = monthly * 12;
+    const projLabel  = projAnnual >= 1000000
+      ? "$" + (projAnnual / 1000000).toFixed(2) + "M"
+      : fmt(projAnnual, true);
+    printRow.innerHTML =
+      printKpiCard("print-cyan",  "Monthly Spend",  fmt(monthly, true),    `${skuCount} paid SKUs`,              `▲ ${projLabel}/yr`) +
+      printKpiCard("print-amber", "Active Seats",   assignedSeats.toLocaleString(), `of ${totalSeats.toLocaleString()} · ${utilPct}%`, `↓ ${inactiveCount} idle`) +
+      printKpiCard("print-green", "Savings Found",  fmt(saveable, true) + "/mo", `${inactiveCount} inactive users`,  `▼ ${fmt(saveable * 12, true)}/yr`) +
+      printKpiCard("print-rose",  "12-mo Projection", projLabel,            `+2% growth rate`,                    `▲ review`);
+  }
+  // Stamp the threshold label
+  const tLabel = document.getElementById("printThresholdLabel");
+  if (tLabel) tLabel.textContent = days;
 }
-function sc(c,l,v,s) {
-  return `<div class="stat ${c}"><div class="stat-label">${l}</div><div class="stat-value stat-value-md">${v}</div>${s?`<div class="stat-sub">${s}</div>`:""}</div>`;
+
+function kpiCard(accent, label, value, sub, trend) {
+  const trendCls = trend.startsWith("▲") ? "up" : trend.startsWith("▼") ? "down" : "neutral";
+  return `<div class="kpi-card ${accent}">
+    <div class="kpi-label">${label}</div>
+    <div class="kpi-value">${value}</div>
+    <div class="kpi-sub">
+      <span>${sub}</span>
+      <span class="kpi-trend ${trendCls}">${trend}</span>
+    </div>
+  </div>`;
+}
+
+function printKpiCard(accent, label, value, sub, trend) {
+  const trendCls = trend.startsWith("▲") ? "up" : trend.startsWith("▼") || trend.startsWith("↓") ? "down" : "neutral";
+  return `<div class="print-kpi ${accent}">
+    <div class="print-kpi-label">${label}</div>
+    <div class="print-kpi-value">${value}</div>
+    <div class="print-kpi-sub">
+      <span>${sub}</span>
+      <span class="print-kpi-trend ${trendCls}">${trend}</span>
+    </div>
+  </div>`;
 }
 
 // ── Callout ────────────────────────────────────────────────────────────────────
@@ -677,9 +977,9 @@ function renderUtilisation(skuList) {
     data: {
       labels: top.map(s => s.name),
       datasets: [
-        { label: "Active",     data: top.map(s => Math.max(0, s.assigned - s.inactiveCount)), backgroundColor: "#047857bb", stack: "s" },
-        { label: "Inactive",   data: top.map(s => s.inactiveCount),                           backgroundColor: "#92400ebb", stack: "s" },
-        { label: "Unassigned", data: top.map(s => s.unassigned),                               backgroundColor: "#991b1bbb", stack: "s" },
+        { label: "Active",     data: top.map(s => Math.max(0, s.assigned - s.inactiveCount)), backgroundColor: "#10b981bb", stack: "s" },
+        { label: "Inactive",   data: top.map(s => s.inactiveCount),                           backgroundColor: "#f59e0bbb", stack: "s" },
+        { label: "Unassigned", data: top.map(s => s.unassigned),                               backgroundColor: "#f43f5ebb", stack: "s" },
       ]
     },
     options: {
@@ -695,7 +995,7 @@ function renderUtilisation(skuList) {
         }
       },
       scales: {
-        x: { stacked: true, grid: { color: grid }, ticks: { color: text, font: { size: 10 } } },
+        x: { stacked: true, grid: { color: grid }, ticks: { color: text, font: { size: 10, family: cd().mono } } },
         y: { stacked: true, grid: { color: grid }, ticks: { color: text, font: { size: 10 }, maxRotation: 0 } }
       }
     }
@@ -717,8 +1017,8 @@ function renderDeptChart(deptMap, filter) {
     data: {
       labels: sorted.map(([d]) => d),
       datasets: [
-        { label: "Active spend",   data: sorted.map(([,v]) => +v.active.toFixed(2)),   backgroundColor: "#1a56dbbb", stack: "s" },
-        { label: "Inactive spend", data: sorted.map(([,v]) => +v.inactive.toFixed(2)), backgroundColor: "#92400ebb", stack: "s" },
+        { label: "Active spend",   data: sorted.map(([,v]) => +v.active.toFixed(2)),   backgroundColor: "#6366f1bb", stack: "s" },
+        { label: "Inactive spend", data: sorted.map(([,v]) => +v.inactive.toFixed(2)), backgroundColor: "#f59e0bbb", stack: "s" },
       ]
     },
     options: {
@@ -729,7 +1029,7 @@ function renderDeptChart(deptMap, filter) {
       },
       scales: {
         x: { stacked: true, grid: { color: grid }, ticks: { color: text, font: { size: 10 } } },
-        y: { stacked: true, grid: { color: grid }, ticks: { color: text, font: { size: 10 }, callback: v => "$" + Math.round(v).toLocaleString() } }
+        y: { stacked: true, grid: { color: grid }, ticks: { color: text, font: { size: 10, family: cd().mono }, callback: v => "$" + Math.round(v).toLocaleString() } }
       }
     }
   });
@@ -780,10 +1080,10 @@ function updateProjections() {
 
   // Update legend
   document.getElementById("projLegend").innerHTML = [
-    { label: "Flat (status quo)",                    color: "#1a56db", dash: false },
-    { label: "Savings (waste + inactive removed)",   color: "#047857", dash: true  },
-    { label: `Growth (${(growthR*100).toFixed(1)}%/mo)`, color: "#92400e", dash: false },
-    { label: "Optimised growth",                     color: "#0e7490", dash: true  },
+    { label: "Flat (status quo)",                    color: "#6366f1", dash: false },
+    { label: "Savings (waste + inactive removed)",   color: "#10b981", dash: true  },
+    { label: `Growth (${(growthR*100).toFixed(1)}%/mo)`, color: "#f59e0b", dash: false },
+    { label: "Optimised growth",                     color: "#06b6d4", dash: true  },
   ].map(l => `
     <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
       <div style="width:22px;height:3px;border-radius:2px;background:${l.color};${l.dash?"border-top:2px dashed "+l.color+";background:transparent":""};flex-shrink:0"></div>
@@ -798,10 +1098,10 @@ function updateProjections() {
     data: {
       labels,
       datasets: [
-        { label: "Flat",              data: flat,      borderColor: "#1a56db", backgroundColor: "transparent", borderWidth: 2.5, tension: .2, pointRadius: 3 },
-        { label: "Savings",           data: savings,   borderColor: "#047857", backgroundColor: "transparent", borderWidth: 2.5, borderDash: [6,3], tension: .2, pointRadius: 3 },
-        { label: "Growth",            data: growth,    borderColor: "#92400e", backgroundColor: "transparent", borderWidth: 2.5, tension: .2, pointRadius: 3 },
-        { label: "Optimised Growth",  data: optGrowth, borderColor: "#0e7490", backgroundColor: "transparent", borderWidth: 2.5, borderDash: [6,3], tension: .2, pointRadius: 3 },
+        { label: "Flat",             data: flat,      borderColor: "#6366f1", backgroundColor: "rgba(99,102,241,0.06)", fill: true, borderWidth: 2, tension: .3, pointRadius: 2 },
+        { label: "Savings",          data: savings,   borderColor: "#10b981", backgroundColor: "transparent", borderWidth: 2, borderDash: [6,3], tension: .3, pointRadius: 2 },
+        { label: "Growth",           data: growth,    borderColor: "#f59e0b", backgroundColor: "transparent", borderWidth: 2, tension: .3, pointRadius: 2 },
+        { label: "Optimised Growth", data: optGrowth, borderColor: "#06b6d4", backgroundColor: "transparent", borderWidth: 2, borderDash: [6,3], tension: .3, pointRadius: 2 },
       ]
     },
     options: {
@@ -815,7 +1115,7 @@ function updateProjections() {
         x: { grid: { color: grid }, ticks: { color: text, font: { size: 11 } } },
         y: {
           grid: { color: grid },
-          ticks: { color: text, font: { size: 11 }, callback: v => "$" + Math.round(v).toLocaleString() }
+          ticks: { color: text, font: { size: 11, family: cd().mono }, callback: v => "$" + Math.round(v).toLocaleString() }
         }
       }
     }
@@ -825,11 +1125,11 @@ function updateProjections() {
   const tblBody = labels.map((m, i) => `
     <tr>
       <td style="font-weight:600">${m}</td>
-      <td style="color:#1a56db">${fmt(flat[i])}</td>
-      <td style="color:#047857">${fmt(savings[i])}</td>
-      <td style="color:#92400e">${fmt(growth[i])}</td>
-      <td style="color:#0e7490">${fmt(optGrowth[i])}</td>
-      <td style="color:var(--green);font-weight:600">${fmt(growth[i] - optGrowth[i])}</td>
+      <td class="cost-cell" style="color:#1a56db">${fmt(flat[i])}</td>
+      <td class="cost-cell" style="color:#047857">${fmt(savings[i])}</td>
+      <td class="cost-cell" style="color:#92400e">${fmt(growth[i])}</td>
+      <td class="cost-cell" style="color:#0e7490">${fmt(optGrowth[i])}</td>
+      <td class="cost-cell" style="color:var(--green);font-weight:600">${fmt(growth[i] - optGrowth[i])}</td>
     </tr>`).join("");
 
   document.getElementById("projTable").innerHTML = `
@@ -917,11 +1217,11 @@ function renderInactiveTable(users, days) {
         </div>
       </td>
       <td style="font-size:12px;color:var(--muted)">${u.department}</td>
-      <td style="font-size:12px;color:var(--red)">${lastSeen}</td>
-      <td><span class="${ageCls}" style="border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">${ageLabel}</span></td>
+      <td class="date-cell">${lastSeen}</td>
+      <td class="num-cell"><span class="${ageCls}" style="border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">${ageLabel}</span></td>
       <td>${licPills}</td>
       <td class="cost-cell">${fmt(u.totalCost)}<span style="font-size:10px;font-weight:400;color:var(--muted)">/mo</span></td>
-      <td style="font-size:12px;color:var(--muted)">${fmt(u.totalCost * 12)}/yr</td>
+      <td class="num-cell">${fmt(u.totalCost * 12)}/yr</td>
     </tr>`;
   }).join("");
 
@@ -1014,6 +1314,15 @@ ITTools.theme.toggle = function() {
   if (_data) { destroyCharts(); renderAll(); }
   return t;
 };
+
+// ── Print / PDF ───────────────────────────────────────────────────────────────
+document.getElementById("printBtn").addEventListener("click", () => {
+  // Stamp timestamp into the print report header just before the dialog opens
+  const ts = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  const el = document.getElementById("printTimestamp");
+  if (el) el.textContent = ts;
+  window.print();
+});
 
 init();
 </script>
