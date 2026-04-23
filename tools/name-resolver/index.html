@@ -108,6 +108,17 @@
   .btn-retry      { padding:3px 9px; border-radius:5px; border:1px solid var(--border); background:transparent; font-size:11px; color:var(--muted); cursor:pointer; font-family:inherit; }
   .btn-retry:hover { color:var(--blue-dark); border-color:var(--blue); }
 
+  /* ── Detected names panel ── */
+  .detected-hdr  { display:flex; justify-content:space-between; align-items:center; background:var(--blue-light); padding:7px 12px; font-size:11px; font-weight:700; color:var(--blue-dark); text-transform:uppercase; letter-spacing:.05em; }
+  .detected-hdr .detected-transformed { color:var(--blue); font-weight:500; text-transform:none; letter-spacing:0; }
+  .detected-list { background:var(--surface); }
+  .detected-row  { display:flex; align-items:center; justify-content:space-between; padding:7px 12px; border-bottom:1px solid var(--border); font-size:12px; gap:8px; }
+  .detected-row:last-child { border-bottom:none; }
+  .detected-left { display:flex; align-items:center; gap:8px; flex:1; min-width:0; }
+  .detected-dot  { width:6px; height:6px; border-radius:50%; background:var(--blue); flex-shrink:0; }
+  .detected-tags { display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
+  .scrub-tag     { font-size:10px; font-weight:600; background:var(--amber-light); color:var(--amber); padding:2px 8px; border-radius:10px; border:1px solid var(--amber-border); white-space:nowrap; }
+
   /* ── Progress ── */
   .progress-wrap { margin:4px 0; }
   .progress-meta { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:6px; }
@@ -218,8 +229,17 @@
 
           <!-- Paste zone -->
           <div id="pasteZone" style="display:none">
-            <textarea class="paste-area" id="pasteIn" placeholder="One name per line&#10;e.g.&#10;Sarah Johnson&#10;Mark Davies&#10;Ali Hassan" oninput="handlePaste()"></textarea>
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">One name per line. Comma-separated inline lists are also accepted.</div>
+            <textarea class="paste-area" id="pasteIn"
+              placeholder="One name per line&#10;e.g.&#10;Sarah Johnson&#10;Mark Davies&#10;Ali Hassan"
+              oninput="handlePaste()"></textarea>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">One name per line. Numbered lists, bullets, and @ mentions are cleaned automatically.</div>
+            <div id="detectedPanel" style="display:none;margin-top:10px;border:1px solid var(--blue);border-radius:8px;overflow:hidden">
+              <div class="detected-hdr">
+                <span id="detectedCount"></span>
+                <span class="detected-transformed" id="detectedTransformed" style="display:none"></span>
+              </div>
+              <div class="detected-list" id="detectedList"></div>
+            </div>
           </div>
         </div>
 
@@ -366,6 +386,76 @@ const st = {
                       // status: "pending"|"matched"|"ambiguous"|"notfound"|"skipped"|"chosen"
 };
 
+// ── Paste scrubber ────────────────────────────────────────────
+const SCRUB_TRANSFORMS = [
+  // 1. stripListPrefix — removes leading list markers (silent, no tag)
+  v => {
+    const cleaned = v.replace(/^\s*(\d+[\.\)]\s*|[•\*\u2013\u2014\-]\s*)/, '');
+    return { value: cleaned };
+  },
+  // 2. stripMentions — removes leading @ symbol
+  v => {
+    if (!v.startsWith('@')) return { value: v };
+    return { value: v.slice(1).trimStart(), tag: '@ stripped' };
+  },
+  // 3. stripTitles — removes leading honorifics (case-insensitive)
+  v => {
+    const m = v.match(/^(Dr\.|Mr\.|Ms\.|Mrs\.|Prof\.)\s+/i);
+    if (!m) return { value: v };
+    const TITLE_CANONICAL = { 'dr.': 'Dr.', 'mr.': 'Mr.', 'ms.': 'Ms.', 'mrs.': 'Mrs.', 'prof.': 'Prof.' };
+    return { value: v.slice(m[0].length), tag: (TITLE_CANONICAL[m[1].toLowerCase()] || m[1]) + ' removed' };
+  },
+  // 4. stripSuffixes — removes (parentheticals) and [brackets] anywhere
+  v => {
+    const tags = [];
+    let out = v;
+    out = out.replace(/\s*\(([^)]*)\)/g, (_, inner) => { tags.push('(' + inner + ') removed'); return ''; });
+    out = out.replace(/\s*\[([^\]]*)\]/g, (_, inner) => { tags.push('[' + inner + '] removed'); return ''; });
+    return tags.length ? { value: out.trim(), tag: tags[0] } : { value: out };
+  },
+  // 5. flipLastFirst — detects "Last, First" pattern and reverses to "First Last"
+  v => {
+    const SUFFIXES = /^(jr\.?|sr\.?|ii|iii|iv)$/i;
+    const parts = v.split(',');
+    if (parts.length !== 2) return { value: v };
+    const last = parts[0].trim(), first = parts[1].trim();
+    if (last.length < 2 || first.length < 2) return { value: v };
+    const allWords = [...last.split(/\s+/), ...first.split(/\s+/)];
+    if (allWords.some(w => SUFFIXES.test(w))) return { value: v };
+    return { value: first + ' ' + last, tag: 'Last, First → flipped' };
+  },
+  // 6. normalizeSpace — collapses multiple spaces and trims (silent, no tag)
+  v => ({ value: v.replace(/\s+/g, ' ').trim() })
+];
+
+function scrubLine(raw) {
+  let value = raw.trim();
+  const tags = [];
+  for (const transform of SCRUB_TRANSFORMS) {
+    const result = transform(value);
+    value = result.value;
+    if (result.tag) tags.push(result.tag);
+  }
+  return { name: value, tags };
+}
+
+function scrubNames(text) {
+  if (!text || typeof text !== 'string') return [];
+  const lines = text.split(/\r?\n/);
+  const seen = new Set();
+  const results = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const { name, tags } = scrubLine(line);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push({ name, tags });
+  }
+  return results;
+}
+
 // ── Init ──────────────────────────────────────────────────────
 async function init() {
   ITTools.theme.init();
@@ -436,6 +526,42 @@ function showErr(id, msg) {
   el.textContent = msg; el.className = "banner error"; el.style.display = msg ? "block" : "none";
 }
 
+function renderDetectedPanel(items) {
+  const panel       = document.getElementById('detectedPanel');
+  const list        = document.getElementById('detectedList');
+  const countEl     = document.getElementById('detectedCount');
+  const transformEl = document.getElementById('detectedTransformed');
+
+  if (!items.length) {
+    panel.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+
+  const transformedCount = items.filter(i => i.tags.length > 0).length;
+  countEl.textContent = '✦ ' + items.length + ' name' + (items.length === 1 ? '' : 's') + ' detected';
+
+  if (transformedCount > 0) {
+    transformEl.textContent = transformedCount + ' transformed';
+    transformEl.style.display = '';
+  } else {
+    transformEl.style.display = 'none';
+  }
+
+  list.innerHTML = items.map(({ name, tags }) => `
+    <div class="detected-row">
+      <div class="detected-left">
+        <span class="detected-dot"></span>
+        <span>${esc(name)}</span>
+      </div>
+      <div class="detected-tags">
+        ${tags.map(t => `<span class="scrub-tag">${esc(t)}</span>`).join('')}
+      </div>
+    </div>`).join('');
+
+  panel.style.display = 'block';
+}
+
 // ── Input mode ────────────────────────────────────────────────
 let _mode = "file";   // "file" | "excel" | "paste"
 let _parsedRows = []; // array of plain objects from CSV/Excel
@@ -459,6 +585,7 @@ function setMode(m) {
     document.getElementById("fileDrop").ondrop = e => { e.preventDefault(); dragLeave(); handleFileDrop(e.dataTransfer.files[0]); };
   }
   clearInput();
+  if (m === 'paste') document.getElementById('mapCard').style.display = 'none';
 }
 
 function dragOver(e)  { e.preventDefault(); document.getElementById("fileDrop").classList.add("drag-over"); }
@@ -505,16 +632,20 @@ function loadExcel(file) {
 }
 
 function handlePaste() {
-  const raw = document.getElementById("pasteIn").value.trim();
-  if (!raw) { _parsedRows = []; updateS1([]); return; }
-  // One name per line; fall back to comma-split only if no newlines detected
-  const lines = raw.includes("\n")
-    ? raw.split(/\r?\n/)
-    : raw.split(",");
-  const names = lines.map(l => l.trim()).filter(l => l);
-  // Treat as single-column "Name" for the column mapper
-  _parsedRows = names.map(n => ({ Name: n }));
-  renderColumnMapper(["Name"], _parsedRows);
+  const raw = document.getElementById('pasteIn').value.trim();
+  if (!raw) {
+    _parsedRows = [];
+    renderDetectedPanel([]);
+    updateS1([]);
+    return;
+  }
+  const items = scrubNames(raw);
+  renderDetectedPanel(items);
+  _parsedRows = items.map(i => ({ Name: i.name }));
+  // _selCol1 must be set here — renderColumnMapper() is skipped in paste mode
+  // but buildNames() still reads row[_selCol1] when s1Next() is called
+  _selCol1 = 'Name';
+  updateS1(items.map(i => i.name));
 }
 
 function showFileLoaded(name, count) {
@@ -533,6 +664,7 @@ function clearInput() {
   const mc = document.getElementById("mapCard");
   if (mc) mc.style.display = "none";
   updateS1([]);
+  renderDetectedPanel([]);
 }
 
 // ── Column detection ──────────────────────────────────────────
