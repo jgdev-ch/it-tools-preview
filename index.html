@@ -30,18 +30,59 @@
 }
 .hub-topbar-right { display: flex; align-items: center; gap: 8px; }
 
-/* ── Hub access badges ── */
-.hub-access-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 2px 8px; border-radius: 20px;
-  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+/* ── Account avatar button ── */
+.account-btn {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--blue); border: none;
+  font-size: 11px; font-weight: 800; color: #fff;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: opacity .15s; flex-shrink: 0;
 }
-.hub-access-badge--amber {
-  background: var(--amber-light); border: 1px solid var(--amber-border); color: var(--amber);
+.account-btn:hover { opacity: .85; }
+.account-btn.open { box-shadow: 0 0 0 2px var(--surface2), 0 0 0 4px var(--blue); }
+
+/* ── Account dropdown panel ── */
+.account-dropdown {
+  position: absolute; right: 0; top: calc(100% + 8px);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.35);
+  min-width: 220px; max-width: 320px; z-index: 200; overflow: hidden;
 }
-.hub-access-badge--blue {
-  background: var(--blue-light); border: 1px solid var(--blue-border); color: var(--blue-dark);
+.account-panel-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 14px 12px; border-bottom: 1px solid var(--border);
 }
+.account-panel-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--blue); flex-shrink: 0;
+  font-size: 13px; font-weight: 800; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.account-panel-name  { font-size: 13px; font-weight: 700; color: var(--text); }
+.account-panel-email { font-size: 11px; color: var(--muted2); margin-top: 1px; }
+.account-panel-access { padding: 10px 14px 8px; }
+.account-panel-access-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted2); margin-bottom: 7px;
+}
+.account-panel-pills { display: flex; flex-direction: column; gap: 5px; }
+.account-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  width: fit-content;
+}
+.account-pill--amber { background: var(--amber-light); border: 1px solid var(--amber-border); color: var(--amber); }
+.account-pill--blue  { background: var(--blue-light);  border: 1px solid var(--blue-border);  color: var(--blue-dark); }
+.account-panel-divider { height: 1px; background: var(--border); }
+.account-panel-signout {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 10px 14px;
+  background: transparent; border: none;
+  font-size: 12px; color: var(--muted2); cursor: pointer;
+  text-align: left; font-family: inherit;
+}
+.account-panel-signout:hover { color: var(--red); background: var(--red-light); }
 
 .btn-signin {
   display: flex; align-items: center; gap: 7px;
@@ -52,29 +93,6 @@
 }
 .btn-signin:hover { background: var(--blue-light); color: var(--blue-dark); border-color: var(--blue); }
 .btn-signin.loading { opacity: .55; pointer-events: none; }
-
-/* Overrides shared/styles.css .user-chip (which defaults to display:flex) —
-   hub uses display:none + .show toggle for sign-in state management */
-.user-chip {
-  display: none; align-items: center; gap: 7px;
-  background: var(--surface3); border-radius: 20px;
-  padding: 3px 10px 3px 4px; font-size: 12px; font-weight: 500;
-}
-.user-chip.show { display: flex; }
-.user-avatar {
-  width: 24px; height: 24px; border-radius: 50%;
-  background: var(--amber-light); color: var(--amber);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 700;
-}
-.btn-signout {
-  display: none; padding: 5px 11px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); background: transparent;
-  font-size: 12px; font-weight: 500; color: var(--muted);
-  cursor: pointer; font-family: inherit; transition: all .12s;
-}
-.btn-signout.show { display: block; }
-.btn-signout:hover { background: var(--red-light); color: var(--red); border-color: var(--red-border); }
 
 /* ── Page shell ── */
 .hub-shell { max-width: 860px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
@@ -270,17 +288,30 @@
       </svg>
     </a>
 
-    <!-- Access badges — shown after gate checks -->
-    <div id="hubBadges" style="display:none;align-items:center;gap:6px"></div>
-
-    <!-- User chip — visible after sign-in -->
-    <div class="user-chip" id="userChip">
-      <div class="user-avatar" id="userInitials"></div>
-      <span id="userName"></span>
+    <!-- Account button + dropdown — visible after sign-in -->
+    <div style="position:relative">
+      <button type="button" class="account-btn" id="accountBtn" onclick="toggleAccountDropdown()" style="display:none" aria-label="Account menu" aria-expanded="false" aria-controls="accountDropdown">
+        <span id="accountInitials"></span>
+      </button>
+      <div class="account-dropdown" id="accountDropdown" style="display:none">
+        <div class="account-panel-head">
+          <div class="account-panel-avatar" id="accountPanelAvatar"></div>
+          <div>
+            <div class="account-panel-name" id="accountPanelName"></div>
+            <div class="account-panel-email" id="accountPanelEmail"></div>
+          </div>
+        </div>
+        <div class="account-panel-access" id="accountPanelAccess" style="display:none">
+          <div class="account-panel-access-label">Access</div>
+          <div class="account-panel-pills" id="accountPanelPills"></div>
+        </div>
+        <div class="account-panel-divider"></div>
+        <button type="button" class="account-panel-signout" onclick="hubSignOut()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sign out
+        </button>
+      </div>
     </div>
-
-    <!-- Sign out — visible after sign-in -->
-    <button class="btn-signout" id="signOutBtn" onclick="hubSignOut()">Sign out</button>
 
     <!-- Sign in — visible when signed out -->
     <button class="btn-signin" id="signInBtn" onclick="hubSignIn()">
@@ -376,22 +407,32 @@ function syncThemeIcon(t) {
     : `<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>`;
 }
 
+let _accountData = null; // { initials, name, email } — set on sign-in, cleared on sign-out
+
 // ── Topbar state ──────────────────────────────────────────────────────────────
 function showSignedIn(account) {
   const name     = account?.name || account?.username || "";
+  const email    = account?.username || "";
   const initials = name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "ME";
-  document.getElementById("userInitials").textContent = initials;
-  document.getElementById("userName").textContent     = name;
-  document.getElementById("userChip").classList.add("show");
-  document.getElementById("signOutBtn").classList.add("show");
-  document.getElementById("signInBtn").style.display  = "none";
+  _accountData   = { initials, name, email };
+  document.getElementById("accountInitials").textContent    = initials;
+  document.getElementById("accountPanelAvatar").textContent = initials;
+  document.getElementById("accountPanelName").textContent   = name;
+  document.getElementById("accountPanelEmail").textContent  = email;
+  document.getElementById("accountBtn").style.display       = "flex";
+  document.getElementById("signInBtn").style.display        = "none";
 }
 function showSignedOut() {
-  document.getElementById("userChip").classList.remove("show");
-  document.getElementById("signOutBtn").classList.remove("show");
-  document.getElementById("signInBtn").style.display  = "";
-  document.getElementById("hubBadges").style.display = "none";
-  document.getElementById("hubBadges").innerHTML = "";
+  _accountData = null;
+  const btn      = document.getElementById("accountBtn");
+  const dropdown = document.getElementById("accountDropdown");
+  btn.style.display        = "none";
+  btn.classList.remove("open");
+  btn.setAttribute("aria-expanded", "false");
+  dropdown.style.display   = "none";
+  document.getElementById("accountPanelPills").innerHTML       = "";
+  document.getElementById("accountPanelAccess").style.display  = "none";
+  document.getElementById("signInBtn").style.display           = "";
 }
 
 // ── Card HTML builders ────────────────────────────────────────────────────────
@@ -491,34 +532,34 @@ async function checkMembership(token, groupId) {
   } catch(_) { return false; }
 }
 
-// ── Render hub access badge pills ────────────────────────────────────────────
-function renderHubBadges(unlockedGates) {
-  const BADGE_DEFS = {
+// ── Render account dropdown access pills ──────────────────────────────────────
+function renderAccountDropdown(unlockedGates) {
+  const PILL_DEFS = {
     finance: {
       label: "Finance View",
-      cls:   "hub-access-badge--amber",
-      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+      cls:   "account-pill--amber",
+      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
     },
     reporting: {
       label: "Reporting View",
-      cls:   "hub-access-badge--blue",
-      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`,
+      cls:   "account-pill--blue",
+      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`,
     },
     gsd: {
       label: "GSD Access",
-      cls:   "hub-access-badge--blue",
-      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+      cls:   "account-pill--blue",
+      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
     },
   };
-  const container = document.getElementById("hubBadges");
-  if (!container) return;
-  const html = unlockedGates
-    .filter(k => BADGE_DEFS[k])
-    .map(k => `<span class="hub-access-badge ${BADGE_DEFS[k].cls}">${BADGE_DEFS[k].icon} ${BADGE_DEFS[k].label}</span>`)
+  const pills    = unlockedGates.filter(k => PILL_DEFS[k]);
+  const pillsEl  = document.getElementById("accountPanelPills");
+  const accessEl = document.getElementById("accountPanelAccess");
+  if (!pillsEl || !accessEl) return;
+  if (!pills.length) { accessEl.style.display = "none"; return; }
+  pillsEl.innerHTML = pills
+    .map(k => `<span class="account-pill ${PILL_DEFS[k].cls}">${PILL_DEFS[k].icon} ${PILL_DEFS[k].label}</span>`)
     .join("");
-  if (!html) { container.style.display = "none"; return; }
-  container.innerHTML = html;
-  container.style.display = "flex";
+  accessEl.style.display = "block";
 }
 
 // ── Run all gate checks after sign-in ─────────────────────────────────────────
@@ -532,7 +573,7 @@ async function runGateChecks(token) {
       unlocked.push(gateKey);
     }
   }
-  renderHubBadges(unlocked);
+  renderAccountDropdown(unlocked);
 }
 
 // ── Restore locks from localStorage (instant, no network) ────────────────────
@@ -544,7 +585,7 @@ function restoreFromLocalStorage() {
       unlocked.push(gateKey);
     }
   }
-  if (unlocked.length) renderHubBadges(unlocked);
+  renderAccountDropdown(unlocked);
 }
 
 // ── Clear all gate flags on sign-out ─────────────────────────────────────────
@@ -748,6 +789,37 @@ function applySetupState(open) {
 document.getElementById("baseUri").textContent = ITTools.auth.redirectUri();
 initTheme();
 applySetupState(localStorage.getItem('it-tools-setup-open') === 'true');
+
+// ── Account dropdown toggle and dismiss ───────────────────────────────────────
+function toggleAccountDropdown() {
+  const dropdown = document.getElementById("accountDropdown");
+  const btn      = document.getElementById("accountBtn");
+  const isOpen   = dropdown.style.display !== "none";
+  dropdown.style.display = isOpen ? "none" : "block";
+  btn.classList.toggle("open", !isOpen);
+  btn.setAttribute("aria-expanded", String(!isOpen));
+}
+
+document.addEventListener("click", e => {
+  const dropdown = document.getElementById("accountDropdown");
+  const btn      = document.getElementById("accountBtn");
+  if (!dropdown || dropdown.style.display === "none") return;
+  if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+    dropdown.style.display = "none";
+    btn.classList.remove("open");
+    btn.setAttribute("aria-expanded", "false");
+  }
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  const dropdown = document.getElementById("accountDropdown");
+  if (!dropdown || dropdown.style.display === "none") return;
+  const btn = document.getElementById("accountBtn");
+  dropdown.style.display = "none";
+  if (btn) { btn.classList.remove("open"); btn.setAttribute("aria-expanded", "false"); }
+});
+
 loadTools();
 </script>
 </body>
