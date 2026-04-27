@@ -93,6 +93,7 @@ ITTools.auth = (() => {
   }
 
   async function signOut() {
+    ITTools.ui.clearUser?.();
     await _msal.logoutPopup({ account: _account });
     _account = null;
     ITTools.auth._onSignOut?.();
@@ -236,6 +237,79 @@ ITTools.theme = (() => {
 // ─────────────────────────────────────────────────────────────
 ITTools.ui = (() => {
 
+  let _listenersAdded = false;
+
+  const GROUP_GATE_IDS = {
+    finance:           "ff9c3232-251f-4570-9564-340039d17aa9",
+    reporting:         "cea8f0fe-a3d5-4f8a-9f77-e9ce6fdf7b8d",
+    gsd:               "3e1a4757-8189-4908-a611-b6029399e69e",
+    "license-modify":  "d98cbaa9-da66-4d1a-8a31-2442b7cc0ca8",
+  };
+
+  const PILL_DEFS = {
+    finance: {
+      label: "Finance View",
+      cls:   "account-pill--amber",
+      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>`,
+    },
+    reporting: {
+      label: "Reporting View",
+      cls:   "account-pill--blue",
+      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    },
+    gsd: {
+      label: "GSD Access",
+      cls:   "account-pill--blue",
+      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+    },
+    "license-modify": {
+      label: "License Admin",
+      cls:   "account-pill--amber",
+      icon:  `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>`,
+    },
+  };
+
+  function _toggleAccountDropdown() {
+    const dropdown = document.getElementById("accountDropdown");
+    const btn      = document.getElementById("accountBtn");
+    if (!dropdown || !btn) return;
+    const isOpen   = dropdown.style.display !== "none";
+    dropdown.style.display = isOpen ? "none" : "block";
+    btn.classList.toggle("open", !isOpen);
+    btn.setAttribute("aria-expanded", String(!isOpen));
+  }
+
+  async function _loadGatePills() {
+    try {
+      const token = await ITTools.auth.getToken();
+      const res = await fetch("https://graph.microsoft.com/v1.0/me/checkMemberObjects", {
+        method:  "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body:    JSON.stringify({ ids: Object.values(GROUP_GATE_IDS) }),
+      });
+      if (!res.ok) return;
+      const data        = await res.json();
+      const unlockedIds = new Set(data.value || []);
+      const unlockedKeys = Object.entries(GROUP_GATE_IDS)
+        .filter(([, id]) => unlockedIds.has(id))
+        .map(([key]) => key);
+      _renderPills(unlockedKeys);
+    } catch (err) { console.warn("[ITTools.ui] _loadGatePills failed:", err); }
+  }
+
+  function _renderPills(keys) {
+    const pillsEl  = document.getElementById("accountPanelPills");
+    const accessEl = document.getElementById("accountPanelAccess");
+    if (!pillsEl || !accessEl) return;
+    const pills = keys.filter(k => PILL_DEFS[k])
+                      .sort((a, b) => PILL_DEFS[a].cls.localeCompare(PILL_DEFS[b].cls));
+    if (!pills.length) { accessEl.style.display = "none"; return; }
+    pillsEl.innerHTML = pills
+      .map(k => `<span class="account-pill ${PILL_DEFS[k].cls}">${PILL_DEFS[k].icon} ${PILL_DEFS[k].label}</span>`)
+      .join("");
+    accessEl.style.display = "block";
+  }
+
   /** Render the standard topbar into #topbar.
    *  Expects: <div id="topbar"></div> in the page.
    *  toolName: short display name e.g. "License Audit"
@@ -268,15 +342,59 @@ ITTools.ui = (() => {
         <button class="btn-icon" id="themeBtn" title="Toggle theme" onclick="ITTools.theme.toggle(); ITTools.ui.syncThemeIcon()">
           <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"></svg>
         </button>
-        <div class="user-chip" id="userChip" style="display:none">
-          <div class="user-avatar" id="userInitials"></div>
-          <span id="userName"></span>
+        <div style="position:relative" id="accountWrap">
+          <button type="button" class="account-btn" id="accountBtn"
+            style="display:none" aria-label="Account menu"
+            aria-expanded="false" aria-controls="accountDropdown">
+            <span id="accountInitials"></span>
+          </button>
+          <div class="account-dropdown" id="accountDropdown" style="display:none">
+            <div class="account-panel-head">
+              <div class="account-panel-avatar" id="accountPanelAvatar"></div>
+              <div>
+                <div class="account-panel-name" id="accountPanelName"></div>
+                <div class="account-panel-email" id="accountPanelEmail"></div>
+              </div>
+            </div>
+            <div class="account-panel-access" id="accountPanelAccess" style="display:none">
+              <div class="account-panel-access-label">Access</div>
+              <div class="account-panel-pills" id="accountPanelPills"></div>
+            </div>
+            <div class="account-panel-divider"></div>
+            <button type="button" class="account-panel-signout" id="accountSignOutBtn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              Sign out
+            </button>
+          </div>
         </div>
-        <button class="btn-sm-ghost" id="signOutBtn" onclick="ITTools.auth.signOut()" style="display:none">Sign out</button>
       </div>
     `;
 
     syncThemeIcon();
+
+    document.getElementById("accountBtn").addEventListener("click", _toggleAccountDropdown);
+    document.getElementById("accountSignOutBtn").addEventListener("click", () => ITTools.auth.signOut());
+    if (!_listenersAdded) {
+      _listenersAdded = true;
+      document.addEventListener("click", e => {
+        const dropdown = document.getElementById("accountDropdown");
+        const btn      = document.getElementById("accountBtn");
+        if (!dropdown || dropdown.style.display === "none") return;
+        if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+          dropdown.style.display = "none";
+          btn.classList.remove("open");
+          btn.setAttribute("aria-expanded", "false");
+        }
+      });
+      document.addEventListener("keydown", e => {
+        if (e.key !== "Escape") return;
+        const dropdown = document.getElementById("accountDropdown");
+        if (!dropdown || dropdown.style.display === "none") return;
+        const btn = document.getElementById("accountBtn");
+        dropdown.style.display = "none";
+        if (btn) { btn.classList.remove("open"); btn.setAttribute("aria-expanded", "false"); }
+      });
+    }
   }
 
   function syncThemeIcon() {
@@ -291,19 +409,31 @@ ITTools.ui = (() => {
 
   function setUser(account) {
     if (!account) return;
-    const name = account.name || account.username || "User";
+    const btn = document.getElementById("accountBtn");
+    if (!btn) return;
+    const name     = account.name || account.username || "User";
+    const email    = account.username || "";
     const initials = name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
-    const chip = document.getElementById("userChip");
-    const btn  = document.getElementById("signOutBtn");
-    if (chip) { document.getElementById("userInitials").textContent = initials; document.getElementById("userName").textContent = name; chip.style.display = "flex"; }
-    if (btn)  btn.style.display = "block";
+    document.getElementById("accountInitials").textContent    = initials;
+    document.getElementById("accountPanelAvatar").textContent = initials;
+    document.getElementById("accountPanelName").textContent   = name;
+    document.getElementById("accountPanelEmail").textContent  = email;
+    btn.style.display = "flex";
+    _loadGatePills();
   }
 
   function clearUser() {
-    const chip = document.getElementById("userChip");
-    const btn  = document.getElementById("signOutBtn");
-    if (chip) chip.style.display = "none";
-    if (btn)  btn.style.display  = "none";
+    const btn      = document.getElementById("accountBtn");
+    const dropdown = document.getElementById("accountDropdown");
+    if (!btn) return;
+    btn.style.display = "none";
+    btn.classList.remove("open");
+    btn.setAttribute("aria-expanded", "false");
+    if (dropdown) dropdown.style.display = "none";
+    const pillsEl  = document.getElementById("accountPanelPills");
+    const accessEl = document.getElementById("accountPanelAccess");
+    if (pillsEl)  pillsEl.innerHTML      = "";
+    if (accessEl) accessEl.style.display = "none";
   }
 
   /** Show/hide a banner element. type: "error"|"warn"|"info"|"success" */
