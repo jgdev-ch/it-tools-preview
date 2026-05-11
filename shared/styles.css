@@ -452,6 +452,7 @@ tr:hover td { background: var(--surface2); }
    FILE DROP ZONE
 ───────────────────────────────────────────────────────────── */
 .file-drop {
+  display: block;
   border: 2px dashed var(--border); border-radius: var(--radius);
   padding: 2rem 1rem; text-align: center; cursor: pointer;
   transition: all .15s; position: relative;
