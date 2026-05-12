@@ -134,9 +134,9 @@
         <div class="banner error" id="s1Err"></div>
         <div class="card">
           <div class="card-title">Source file</div>
-          <div class="file-drop" id="fileDrop" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
+          <div class="file-drop" id="fileDrop" onclick="openFilePicker()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
             <div style="font-size:28px;margin-bottom:8px">📄</div>
-            <p>Drag &amp; drop your CSV, or <strong onclick="document.getElementById('fileIn').click()">browse</strong></p>
+            <p>Drag &amp; drop your CSV, or <strong>browse</strong></p>
             <p style="font-size:11px;color:var(--muted2);margin-top:4px">.csv files only</p>
             <input type="file" id="fileIn" accept=".csv" onchange="handleFile(event)"/>
           </div>
@@ -379,6 +379,7 @@ function showErr(id, msg) {
 }
 
 // ── Step 1: CSV ────────────────────────────────────────────────
+function openFilePicker() { console.log("[GI] openFilePicker"); const i = document.getElementById("fileIn"); i.value = ""; i.click(); }
 function dragOver(e)  { e.preventDefault(); console.log("[GI] dragOver fired"); document.getElementById("fileDrop").classList.add("drag-over"); }
 function dragLeave()  { document.getElementById("fileDrop").classList.remove("drag-over"); }
 function dropFile(e)  { e.preventDefault(); dragLeave(); console.log("[GI] dropFile fired, files:", e.dataTransfer.files.length); loadFile(e.dataTransfer.files[0]); }
