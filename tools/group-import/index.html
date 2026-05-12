@@ -379,10 +379,10 @@ function showErr(id, msg) {
 }
 
 // ── Step 1: CSV ────────────────────────────────────────────────
-function dragOver(e)  { e.preventDefault(); document.getElementById("fileDrop").classList.add("drag-over"); }
+function dragOver(e)  { e.preventDefault(); console.log("[GI] dragOver fired"); document.getElementById("fileDrop").classList.add("drag-over"); }
 function dragLeave()  { document.getElementById("fileDrop").classList.remove("drag-over"); }
-function dropFile(e)  { e.preventDefault(); dragLeave(); loadFile(e.dataTransfer.files[0]); }
-function handleFile(e){ loadFile(e.target.files[0]); }
+function dropFile(e)  { e.preventDefault(); dragLeave(); console.log("[GI] dropFile fired, files:", e.dataTransfer.files.length); loadFile(e.dataTransfer.files[0]); }
+function handleFile(e){ console.log("[GI] handleFile fired, files:", e.target.files.length); loadFile(e.target.files[0]); }
 
 function clearFile() {
   st.csvName = ""; st.identifiers = [];
@@ -395,17 +395,20 @@ function clearFile() {
 }
 
 function loadFile(file) {
-  if (!file) return;
+  if (!file) { console.log("[GI] loadFile: no file"); return; }
+  console.log("[GI] loadFile:", file.name, file.size, "bytes");
   document.getElementById("fileIn").value = "";
   if (!file.name.toLowerCase().endsWith(".csv")) { showErr("s1Err","Please upload a .csv file."); return; }
   const reader = new FileReader();
-  reader.onload = e => parseAndRender(file.name, e.target.result);
+  reader.onerror = e => { console.error("[GI] FileReader error:", e); showErr("s1Err", "Could not read file."); };
+  reader.onload = e => { console.log("[GI] FileReader loaded, calling parseAndRender"); parseAndRender(file.name, e.target.result); };
   reader.readAsText(file);
 }
 
 let _parsed = null;
 function parseAndRender(name, text) {
-  try { _parsed = ITTools.csv.parse(text); } catch(e) { showErr("s1Err", e.message); return; }
+  console.log("[GI] parseAndRender:", name, "text length:", text.length);
+  try { _parsed = ITTools.csv.parse(text); } catch(e) { console.error("[GI] csv.parse error:", e); showErr("s1Err", e.message); return; }
   st.csvName = name;
   document.getElementById("s1Err").style.display = "none";
   document.getElementById("fileLoaded").style.display = "flex";
