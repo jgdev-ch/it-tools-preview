@@ -452,7 +452,6 @@ tr:hover td { background: var(--surface2); }
    FILE DROP ZONE
 ───────────────────────────────────────────────────────────── */
 .file-drop {
-  display: block;
   border: 2px dashed var(--border); border-radius: var(--radius);
   padding: 2rem 1rem; text-align: center; cursor: pointer;
   transition: all .15s; position: relative;
@@ -463,7 +462,7 @@ tr:hover td { background: var(--surface2); }
 .file-drop p { font-size: 13px; color: var(--muted); }
 .file-drop strong { color: var(--blue-mid); cursor: pointer; }
 .file-drop input[type="file"] {
-  display: none;
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
 }
 
 /* ─────────────────────────────────────────────────────────────
