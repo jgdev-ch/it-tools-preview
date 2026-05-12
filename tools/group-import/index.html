@@ -134,11 +134,11 @@
         <div class="banner error" id="s1Err"></div>
         <div class="card">
           <div class="card-title">Source file</div>
-          <div class="file-drop" id="fileDrop" onclick="openFilePicker()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
+          <div class="file-drop" id="fileDrop" onclick="if(event.target.id!=='fileIn')openFilePicker()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
             <div style="font-size:28px;margin-bottom:8px">📄</div>
             <p>Drag &amp; drop your CSV, or <strong>browse</strong></p>
             <p style="font-size:11px;color:var(--muted2);margin-top:4px">.csv files only</p>
-            <input type="file" id="fileIn" accept=".csv" onchange="handleFile(event)" onclick="event.stopPropagation()"/>
+            <input type="file" id="fileIn" accept=".csv" onchange="handleFile(event)"/>
           </div>
           <div class="file-loaded" id="fileLoaded" style="display:none">
             <span style="font-size:16px">✅</span>
