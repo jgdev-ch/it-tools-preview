@@ -22,6 +22,7 @@ try {
 $allMailboxes    = @()
 $toRefresh       = @()
 $skipped         = @()
+$toProcess       = @()
 $results         = @()
 $failureCount    = 0
 $reportTime      = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -30,7 +31,7 @@ $reportTimestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 # --- Helpers ---
 function Write-Step {
     param([int]$Step, [string]$Message)
-    Write-Host "`n[$Step/4] $Message" -ForegroundColor Cyan
+    Write-Host "`n[$Step/5] $Message" -ForegroundColor Cyan
 }
 
 function Write-Detail {
@@ -82,6 +83,7 @@ foreach ($mbx in $sharedMailboxes) {
             Address     = $mbx.PrimarySmtpAddress
             DisplayName = $mbx.DisplayName
             AutoMapping = $autoMap
+            Action      = if ($autoMap) { 'Repair' } else { 'Skip' }
         }
     }
 }
@@ -114,7 +116,7 @@ foreach ($mbx in $allMailboxes) {
 }
 
 Write-Host ""
-Write-Detail ("{0} mailbox(es) found — {1} will be refreshed" -f $allMailboxes.Count, $toRefresh.Count) White
+Write-Detail ("{0} mailbox(es) found — {1} automapped, {2} already disabled" -f $allMailboxes.Count, $toRefresh.Count, $skipped.Count) White
 
 # --- Exit: all mailboxes have AutoMapping disabled ---
 if ($toRefresh.Count -eq 0) {
@@ -127,9 +129,67 @@ if ($toRefresh.Count -eq 0) {
     exit 0
 }
 
-# --- Confirm ---
+# --- Phase 3: Action Selection ---
+Write-Step 3 "Action Selection"
 Write-Host ""
-$go = Read-Host "      Proceed with refresh? [Y/N]"
+
+$disableChoice = Read-Host "      Disable AutoMapping on any automapped mailboxes? [Y/N]"
+Write-Host ""
+
+if ($disableChoice -match '^[Yy]') {
+    $bulkChoice = Read-Host "      Apply to all [A] or one at a time [O]?"
+    Write-Host ""
+
+    if ($bulkChoice -match '^[Aa]') {
+        foreach ($mbx in $allMailboxes | Where-Object { $_.Action -eq 'Repair' }) {
+            $mbx.Action = 'Disable'
+        }
+    } else {
+        $automapped = @($allMailboxes | Where-Object { $_.Action -eq 'Repair' })
+        for ($i = 0; $i -lt $automapped.Count; $i++) {
+            $mbx    = $automapped[$i]
+            $prompt = "      [{0}/{1}] {2,-46} [R]epair / [D]isable / [S]kip" -f ($i + 1), $automapped.Count, $mbx.Address
+            do {
+                $choice = Read-Host $prompt
+            } while ($choice -notmatch '^[RrDdSs]$')
+            switch -Regex ($choice) {
+                '^[Dd]$' { $mbx.Action = 'Disable' }
+                '^[Ss]$' { $mbx.Action = 'Skip'    }
+            }
+        }
+        Write-Host ""
+    }
+}
+
+# --- Action plan table ---
+Write-Host ""
+Write-Detail ("{0,-50} {1}" -f 'Mailbox', 'Action') Gray
+Write-Detail ("{0,-50} {1}" -f '-------', '------') Gray
+foreach ($mbx in $allMailboxes) {
+    $actionLabel = switch ($mbx.Action) {
+        'Repair'  { 'Repair  (refresh AutoMapping pointer)' }
+        'Disable' { 'Disable AutoMapping'                   }
+        'Skip'    { 'Skip  (already disabled / orphaned)'   }
+    }
+    $actionColor = switch ($mbx.Action) {
+        'Repair'  { 'Green'  }
+        'Disable' { 'Yellow' }
+        'Skip'    { 'Gray'   }
+    }
+    Write-Detail ("{0,-50} {1}" -f $mbx.Address, $actionLabel) $actionColor
+}
+Write-Host ""
+
+$toProcess = @($allMailboxes | Where-Object { $_.Action -in 'Repair', 'Disable' })
+
+if ($toProcess.Count -eq 0) {
+    Write-Detail "No changes selected — all mailboxes skipped." Yellow
+    Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Host "  Exchange Online session disconnected.`n" -ForegroundColor DarkGray
+    exit 0
+}
+
+$go = Read-Host "      Proceed? [Y/N]"
 Write-Host ""
 if ($go -notmatch '^[Yy]') {
     Write-Host "  No changes made.`n" -ForegroundColor Cyan
@@ -137,26 +197,29 @@ if ($go -notmatch '^[Yy]') {
     exit 0
 }
 
-# --- Phase 3: Permission refresh ---
-Write-Step 3 "Refreshing permissions..."
+# --- Phase 4: Permission refresh ---
+Write-Step 4 "Permission Operations..."
 Write-Host ""
 
 $results = @()
-$i = 0
-foreach ($mbx in $toRefresh) {
-    $label = "[{0}/{1}] {2}" -f ($i + 1), $toRefresh.Count, $mbx.Address
+$i       = 0
+foreach ($mbx in $toProcess) {
+    $label = "[{0}/{1}] {2}" -f ($i + 1), $toProcess.Count, $mbx.Address
     Write-Host ("      {0,-68}" -f $label) -NoNewline
 
     try {
         Remove-MailboxPermission -Identity $mbx.Address -User $Mailbox `
             -AccessRights FullAccess -Confirm:$false -ErrorAction Stop
         Add-MailboxPermission -Identity $mbx.Address -User $Mailbox `
-            -AccessRights FullAccess -AutoMapping $true -ErrorAction Stop | Out-Null
+            -AccessRights FullAccess -AutoMapping ($mbx.Action -eq 'Repair') -ErrorAction Stop | Out-Null
 
-        Write-Host "Done" -ForegroundColor Green
+        $outcome      = if ($mbx.Action -eq 'Repair') { 'Refreshed' } else { 'Disabled' }
+        $outcomeColor = if ($mbx.Action -eq 'Repair') { 'Green' }     else { 'Yellow' }
+        Write-Host $outcome -ForegroundColor $outcomeColor
         $results += [PSCustomObject]@{
             Address = $mbx.Address
-            Outcome = 'Refreshed'
+            Action  = $mbx.Action
+            Outcome = $outcome
             Reason  = ''
         }
     } catch {
@@ -165,6 +228,7 @@ foreach ($mbx in $toRefresh) {
         Write-Detail "    $errMsg" Red
         $results += [PSCustomObject]@{
             Address = $mbx.Address
+            Action  = $mbx.Action
             Outcome = 'Failed'
             Reason  = $errMsg
         }
@@ -173,26 +237,32 @@ foreach ($mbx in $toRefresh) {
     $i++
 }
 
-# Add skipped mailboxes to results for reporting
-foreach ($mbx in $skipped) {
+# Add skipped mailboxes to results
+foreach ($mbx in $allMailboxes | Where-Object { $_.Action -eq 'Skip' }) {
+    $skipReason = if (-not $mbx.AutoMapping) { 'AutoMapping already disabled' } else { 'Skipped by tech' }
     $results += [PSCustomObject]@{
         Address = $mbx.Address
+        Action  = 'Skip'
         Outcome = 'Skipped'
-        Reason  = 'AutoMapping disabled'
+        Reason  = $skipReason
     }
 }
 
-# --- Phase 4: Verify and summarise ---
-Write-Step 4 "Verifying and summarising..."
+# --- Phase 5: Verify and summarise ---
+Write-Step 5 "Verifying and summarising..."
 Write-Host ""
 
 # Re-query to confirm each refresh landed
-foreach ($r in $results | Where-Object { $_.Outcome -eq 'Refreshed' }) {
+foreach ($r in $results | Where-Object { $_.Outcome -in 'Refreshed', 'Disabled' }) {
     $verify = Get-EXOMailboxPermission -Identity $r.Address -User $Mailbox -ErrorAction SilentlyContinue |
         Where-Object { $_.AccessRights -contains 'FullAccess' -and -not $_.Deny }
     if (-not $verify) {
         $r.Outcome = 'Failed'
-        $r.Reason  = 'Permission not found after refresh — verify manually in Exchange admin'
+        $r.Reason  = 'Permission not found after operation — verify manually in Exchange admin'
+        $failureCount++
+    } elseif ($null -ne $verify.AutoMapping -and $verify.AutoMapping -ne ($r.Action -eq 'Repair')) {
+        $r.Outcome = 'Failed'
+        $r.Reason  = 'AutoMapping flag mismatch after operation — verify manually in Exchange admin'
         $failureCount++
     }
 }
@@ -203,11 +273,12 @@ Write-Host "       Results" -ForegroundColor White
 foreach ($r in $results) {
     $color = switch ($r.Outcome) {
         'Refreshed' { 'Green'  }
+        'Disabled'  { 'Yellow' }
         'Skipped'   { 'Gray'   }
         'Failed'    { 'Red'    }
         default     { 'White'  }
     }
-    $suffix = if ($r.Outcome -eq 'Skipped') { '  (AutoMapping disabled)' } `
+    $suffix = if ($r.Outcome -eq 'Skipped') { "  ($($r.Reason))" } `
               elseif ($r.Outcome -eq 'Failed') { "  — $($r.Reason)" } `
               else { '' }
     Write-Detail ("  {0,-50} {1}{2}" -f $r.Address, $r.Outcome, $suffix) $color
@@ -216,24 +287,38 @@ Write-Host "      ================================================" -ForegroundC
 Write-Host ""
 
 $refreshedCount = ($results | Where-Object { $_.Outcome -eq 'Refreshed' }).Count
+$disabledCount  = ($results | Where-Object { $_.Outcome -eq 'Disabled'  }).Count
 $skippedCount   = ($results | Where-Object { $_.Outcome -eq 'Skipped'   }).Count
 $failedCount    = ($results | Where-Object { $_.Outcome -eq 'Failed'    }).Count
 
 # Failure callout
 if ($failedCount -gt 0) {
-    Write-Detail "$failedCount mailbox(es) failed to refresh — manual remediation required." Red
+    Write-Detail "$failedCount mailbox(es) failed — manual remediation required." Red
     Write-Detail "Check Exchange admin permissions and re-run, or grant Full Access manually." Gray
     Write-Host ""
 }
 
-# Outlook restart instructions
+# Conditional Next Steps
 $alias = ($Mailbox -split '@')[0]
+$step  = 1
 Write-Host "      ================================================" -ForegroundColor DarkCyan
 Write-Host "       Next Steps" -ForegroundColor White
-Write-Detail "  Step 1 — Ask $alias to close and reopen Outlook." White
-Write-Detail "           Shared mailboxes should reappear within a few minutes." Gray
-Write-Detail "  Step 2 — If still missing after restart, rebuild the local" White
-Write-Detail "           Outlook profile: Control Panel > Mail > Show Profiles." Gray
+if ($refreshedCount -gt 0) {
+    Write-Detail "  Step $step — Ask $alias to close and reopen Outlook." White
+    Write-Detail "           Repaired mailboxes should reappear within a few minutes." Gray
+    $step++
+}
+if ($disabledCount -gt 0) {
+    Write-Detail "  Step $step — Manually add disabled mailboxes in Outlook:" White
+    Write-Detail "           Classic: File > Account Settings > Change > More Settings" Gray
+    Write-Detail "                    > Advanced > add shared mailbox address" Gray
+    Write-Detail "           New Outlook: Right-click Folders > Add shared folder" Gray
+    $step++
+}
+if ($refreshedCount -gt 0) {
+    Write-Detail "  Step $step — If repaired mailboxes still missing after restart," White
+    Write-Detail "           rebuild the Outlook profile: Control Panel > Mail > Show Profiles." Gray
+}
 Write-Host "      ================================================" -ForegroundColor DarkCyan
 Write-Host ""
 
@@ -258,8 +343,9 @@ if ($export -match '^[Yy]') {
         " PRE-FLIGHT"
         $dash
         (" Shared mailboxes found : {0}" -f $allMailboxes.Count)
-        (" To be refreshed        : {0} (AutoMapping enabled)"  -f $toRefresh.Count)
-        (" Skipped                : {0} (AutoMapping disabled)" -f $skipped.Count)
+        (" To be repaired         : {0} (AutoMapping pointer refresh)"         -f (($toProcess | Where-Object { $_.Action -eq 'Repair'  }).Count))
+        (" To be disabled         : {0} (AutoMapping will be set to disabled)" -f (($toProcess | Where-Object { $_.Action -eq 'Disable' }).Count))
+        (" Skipped                : {0} (AutoMapping already disabled)"         -f ($allMailboxes | Where-Object { $_.Action -eq 'Skip' }).Count)
         ""
         $dash
         " RESULTS"
@@ -268,7 +354,8 @@ if ($export -match '^[Yy]') {
 
     foreach ($r in $results) {
         $suffix = switch ($r.Outcome) {
-            'Skipped'  { ' (AutoMapping disabled)' }
+            'Skipped'  { " ($($r.Reason))" }
+            'Disabled' { ' (AutoMapping disabled — manually add in Outlook)' }
             'Failed'   { " — $($r.Reason)" }
             default    { '' }
         }
@@ -283,18 +370,28 @@ if ($export -match '^[Yy]') {
     )
 
     if ($failedCount -eq 0) {
-        $report += " Repair complete."
+        $report += " Operation complete."
     } else {
-        $report += " Repair complete with $failedCount failure(s) — manual follow-up required."
+        $report += " Operation complete with $failedCount failure(s) — manual follow-up required."
     }
 
-    $report += @(
-        " Step 1: Ask user to close and reopen Outlook."
-        "         Shared mailboxes should reappear within a few minutes."
-        " Step 2: If still missing after restart, rebuild the Outlook profile"
-        "         via Control Panel > Mail > Show Profiles."
-        $sep
-    )
+    $rStep = 1
+    if ($refreshedCount -gt 0) {
+        $report += " Step ${rStep}: Ask user to close and reopen Outlook."
+        $report += "         Repaired mailboxes should reappear within a few minutes."
+        $rStep++
+    }
+    if ($disabledCount -gt 0) {
+        $report += " Step ${rStep}: Manually add disabled mailboxes in Outlook:"
+        $report += "         Classic: File > Account Settings > Change > More Settings > Advanced"
+        $report += "         New Outlook: Right-click Folders > Add shared folder"
+        $rStep++
+    }
+    if ($refreshedCount -gt 0) {
+        $report += " Step ${rStep}: If repaired mailboxes still missing after restart, rebuild"
+        $report += "         the Outlook profile via Control Panel > Mail > Show Profiles."
+    }
+    $report += $sep
 
     $report | Out-File -FilePath $reportFile -Encoding UTF8
     Write-Host ""
