@@ -19,10 +19,12 @@ try {
 }
 
 # --- Constants ---
+$SCRIPT_VERSION                = "1.4"
 $RETENTION_POLICY_NAME         = "3 Year Email Retention Policy"
 $PROPAGATION_WAIT_SECONDS      = 120
 $POLL_INTERVAL_SECONDS         = 30
 $DISCOVERY_HOLDS_SIR_THRESHOLD = 1GB
+$PRIMARY_FOLDER_SIZE_THRESHOLD = 1GB
 $ASYNC_HOLD_CHECK_WAIT         = 90   # seconds — Exchange applies DelayHoldApplied asynchronously
 
 # --- State ---
@@ -42,6 +44,8 @@ $sirWasDisabledByScript  = $false
 $sirRestored             = $false
 $mfaOnlyMode             = $false
 $statusOnlyMode          = $false
+$folderCleanupMode       = $false
+$folderCleanupResults    = @()
 $reportTime              = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 $reportTimestamp         = Get-Date -Format 'yyyyMMdd-HHmmss'
 
@@ -102,10 +106,26 @@ function Confirm-Continue {
     }
 }
 
+function ConvertTo-FolderQueryString {
+    param([string]$FolderId)
+    $encoding   = [System.Text.Encoding]::GetEncoding("us-ascii")
+    $nibbler    = $encoding.GetBytes("0123456789ABCDEF")
+    $idBytes    = [Convert]::FromBase64String($FolderId)
+    $indexBytes = New-Object byte[] 48
+    $indexBytes[0] = 1
+    [System.Buffer]::BlockCopy($idBytes, 0, $indexBytes, 1, 24)
+    $query = "folderid:"
+    for ($i = 0; $i -lt 25; $i++) {
+        $query += [char]$nibbler[$indexBytes[$i] -shr 4]
+        $query += [char]$nibbler[$indexBytes[$i] -band 0x0F]
+    }
+    return $query
+}
+
 # --- Main ---
 Write-Host ""
 Write-Host "  ================================================" -ForegroundColor DarkCyan
-Write-Host "   Mailbox Cleanup Tool" -ForegroundColor White
+Write-Host "   Mailbox Cleanup Tool  v$SCRIPT_VERSION" -ForegroundColor White
 Write-Host "  ================================================" -ForegroundColor DarkCyan
 Write-Host "   Target: $Mailbox" -ForegroundColor Gray
 Write-Host ""
@@ -235,28 +255,38 @@ if (-not $sirEnabled) {
     }
 }
 
-# --- Mode selection ---
-Write-Host ""
-Write-Host "      What would you like to do?" -ForegroundColor White
-Write-Host "        [C] Full cleanup   — compliance search, purge, and MFA" -ForegroundColor Gray
-Write-Host "        [M] MFA only       — re-check SIR, clear delay holds, and re-trigger MFA" -ForegroundColor Gray
-Write-Host "        [S] Status only    — exit here, no changes made" -ForegroundColor Gray
-Write-Host "        [Q] Quit" -ForegroundColor Gray
-Write-Host ""
-$modeChoice = Read-Host "      Choice"
-Write-Host ""
+# --- Mode loop — allows [F] post-purge [M] to return here ---
+$modeLoopActive = $true
+while ($modeLoopActive) {
+    $modeLoopActive    = $false
+    $mfaOnlyMode       = $false
+    $statusOnlyMode    = $false
+    $folderCleanupMode = $false
 
-switch -Regex ($modeChoice) {
-    '^[Ss]' { $statusOnlyMode = $true }
-    '^[Mm]' { $mfaOnlyMode   = $true }
-    '^[Cc]' { }
-    default {
-        $exitMsg = if ($sirRestored) { "SingleItemRecovery re-enabled. Exited." } else { "Exited. No changes were made." }
-        Write-Host "  $exitMsg`n" -ForegroundColor Cyan
-        Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
-        exit 0
+    # --- Mode selection ---
+    Write-Host ""
+    Write-Host "      What would you like to do?" -ForegroundColor White
+    Write-Host "        [C] Full cleanup   — compliance search, purge, and MFA" -ForegroundColor Gray
+    Write-Host "        [M] MFA only       — re-check SIR, clear delay holds, and re-trigger MFA" -ForegroundColor Gray
+    Write-Host "        [F] Folder cleanup — permanently purge contents of a primary mailbox folder" -ForegroundColor Gray
+    Write-Host "        [S] Status only    — exit here, no changes made" -ForegroundColor Gray
+    Write-Host "        [Q] Quit" -ForegroundColor Gray
+    Write-Host ""
+    $modeChoice = Read-Host "      Choice"
+    Write-Host ""
+
+    switch -Regex ($modeChoice) {
+        '^[Ss]' { $statusOnlyMode    = $true }
+        '^[Mm]' { $mfaOnlyMode       = $true }
+        '^[Cc]' { }
+        '^[Ff]' { $folderCleanupMode = $true }
+        default {
+            $exitMsg = if ($sirRestored) { "SingleItemRecovery re-enabled. Exited." } else { "Exited. No changes were made." }
+            Write-Host "  $exitMsg`n" -ForegroundColor Cyan
+            Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
+            exit 0
+        }
     }
-}
 
 # --- Status only: exit cleanly ---
 if ($statusOnlyMode) {
@@ -265,6 +295,223 @@ if ($statusOnlyMode) {
     Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
     exit 0
 }
+
+# --- Folder cleanup mode ---
+if ($folderCleanupMode) {
+    Write-Host ""
+    Write-Host "      ================================================" -ForegroundColor Red
+    Write-Host "       PERMANENT DELETE — Folder Cleanup" -ForegroundColor Red
+    Write-Host "       This action will hard-delete ALL items in the" -ForegroundColor White
+    Write-Host "       selected folder. They cannot be recovered." -ForegroundColor White
+    Write-Host ""
+    Write-Host "       Confirm with the user that the folder contents" -ForegroundColor White
+    Write-Host "       are safe to permanently delete before proceeding." -ForegroundColor White
+    Write-Host "      ================================================" -ForegroundColor Red
+    Write-Host ""
+    $warnResponse = Read-Host "      Understood — proceed to folder selection? [Y/N]"
+    Write-Host ""
+    if ($warnResponse -notmatch '^[Yy]') {
+        Write-Host "  Folder cleanup cancelled. No changes made.`n" -ForegroundColor Cyan
+        continue
+    }
+
+    Write-Host ""
+    Write-Detail "Connecting to Security & Compliance..." Cyan
+    try {
+        Connect-IPPSSession -EnableSearchOnlySession -ErrorAction Stop -WarningAction SilentlyContinue 6>$null
+        Write-Detail "Security & Compliance: connected" Green
+    } catch {
+        Write-Detail "ERROR: Could not connect to Security & Compliance. $_" Red
+        continue
+    }
+
+    $folderLoopActive = $true
+    while ($folderLoopActive) {
+        $folderLoopActive = $false
+
+        # Primary mailbox quota display
+        $primaryStats      = $null
+        $primaryUsedBytes  = [long]0
+        $primaryLimitBytes = ConvertTo-Bytes $mbx.ProhibitSendReceiveQuota
+        try {
+            $primaryStats     = Get-MailboxStatistics -Identity $Mailbox -ErrorAction Stop
+            $primaryUsedBytes = ConvertTo-Bytes $primaryStats.TotalItemSize
+        } catch {
+            Write-Detail "WARNING: Could not fetch primary mailbox size. $_" Yellow
+        }
+        $primaryPct = if ($primaryLimitBytes -gt 0) { [int](($primaryUsedBytes / $primaryLimitBytes) * 100) } else { 0 }
+
+        Write-Host ""
+        Write-Detail ("Primary Mailbox    : {0} / {1} ({2}% full)" -f `
+            (Format-Size $primaryUsedBytes), (Format-Size $primaryLimitBytes), $primaryPct) `
+            $(if ($primaryPct -ge 90) { 'Red' } elseif ($primaryPct -ge 70) { 'Yellow' } else { 'Green' })
+        Write-Host ""
+
+        # Primary folder list — exclude Recoverable Items and root; filter > 1 GB; sort largest first
+        $primaryFolders = Get-MailboxFolderStatistics -Identity $Mailbox |
+            Where-Object {
+                $_.FolderType -notlike 'RecoverableItems*' -and
+                $_.FolderType -ne 'Root' -and
+                (ConvertTo-Bytes $_.FolderAndSubfolderSize) -gt $PRIMARY_FOLDER_SIZE_THRESHOLD
+            } |
+            Sort-Object { ConvertTo-Bytes $_.FolderAndSubfolderSize } -Descending
+
+        if (-not $primaryFolders -or $primaryFolders.Count -eq 0) {
+            Write-Detail "No primary folders exceed 1 GB. Nothing to target." Yellow
+            Write-Host ""
+            continue
+        }
+
+        Write-Detail "Select a folder to purge:" White
+        Write-Host ""
+        $nameColWidth = [Math]::Max(($primaryFolders | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum + 2, 20)
+        $idx = 1
+        foreach ($f in $primaryFolders) {
+            $fBytes = ConvertTo-Bytes $f.FolderAndSubfolderSize
+            $fPct   = if ($primaryLimitBytes -gt 0) { ($fBytes / $primaryLimitBytes) * 100 } else { 0 }
+            $fColor = if     ($fPct -ge 60) { 'Red' }
+                      elseif ($fPct -ge 20) { 'DarkYellow' }
+                      elseif ($fPct -ge 5)  { 'Yellow' }
+                      else                   { 'Gray' }
+            Write-Host ("      [{0}]  {1} {2,8} items   {3}" -f $idx, $f.Name.PadRight($nameColWidth), $f.ItemsInFolder, (Format-Size $fBytes)) -ForegroundColor $fColor
+            $idx++
+        }
+        Write-Host ""
+
+        # Folder selection with validation
+        $selectedFolder = $null
+        while ($null -eq $selectedFolder) {
+            $folderChoice = Read-Host "      Enter folder number"
+            $folderIndex  = 0
+            if ([int]::TryParse($folderChoice, [ref]$folderIndex) -and
+                $folderIndex -ge 1 -and $folderIndex -le $primaryFolders.Count) {
+                $selectedFolder = $primaryFolders[$folderIndex - 1]
+            } else {
+                Write-Detail "Invalid selection. Enter a number between 1 and $($primaryFolders.Count)." Yellow
+            }
+        }
+
+        $selBytes = ConvertTo-Bytes $selectedFolder.FolderAndSubfolderSize
+        Write-Host ""
+        Write-Detail ("Selected: {0}  ({1:N0} items / {2})" -f `
+            $selectedFolder.Name, $selectedFolder.ItemsInFolder, (Format-Size $selBytes)) White
+        $purgeConfirm = Read-Host "      Proceed with HardDelete purge of all items in this folder? [Y/N]"
+        Write-Host ""
+        if ($purgeConfirm -notmatch '^[Yy]') {
+            Write-Detail "Purge cancelled. Returning to folder list." Yellow
+            $folderLoopActive = $true
+            continue
+        }
+
+        # Compliance search + HardDelete purge
+        $folderSearchName = $null
+        $folderSearch     = $null
+        $folderPurgeError = $false
+        try {
+            $folderAlias      = ($Mailbox -split '@')[0]
+            $folderSafeName   = $selectedFolder.Name -replace '[^A-Za-z0-9]', ''
+            $folderTimestamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
+            $folderSearchName = "FolderCleanup-$folderAlias-$folderSafeName-$folderTimestamp"
+            $folderQuery      = ConvertTo-FolderQueryString -FolderId $selectedFolder.FolderId
+
+            Write-Detail "Compliance search: $folderSearchName" Gray
+
+            New-ComplianceSearch -Name $folderSearchName `
+                -ExchangeLocation $Mailbox `
+                -ContentMatchQuery $folderQuery `
+                -ErrorAction Stop | Out-Null
+
+            Start-ComplianceSearch -Identity $folderSearchName -ErrorAction Stop
+
+            $elapsed = 0
+            do {
+                Start-Sleep -Seconds $POLL_INTERVAL_SECONDS
+                $elapsed += $POLL_INTERVAL_SECONDS
+                $folderSearch = Get-ComplianceSearch -Identity $folderSearchName
+                Write-Detail "Searching... (${elapsed}s) - $($folderSearch.Status)"
+            } while ($folderSearch.Status -notin @('Completed', 'Failed'))
+
+            if ($folderSearch.Status -eq 'Failed') {
+                throw "Compliance search '$folderSearchName' failed. Check the Security & Compliance portal."
+            }
+
+            Write-Detail ("Search complete — {0:N0} items found ({1})" -f `
+                $folderSearch.Items, (Format-Size $folderSearch.Size)) Green
+
+            Write-Detail "Running purge (HardDelete)..." Yellow
+
+            New-ComplianceSearchAction -SearchName $folderSearchName `
+                -Purge -PurgeType HardDelete -Confirm:$false -ErrorAction Stop | Out-Null
+
+            $folderActionName = "$folderSearchName`_Purge"
+            $elapsed = 0
+            do {
+                Start-Sleep -Seconds $POLL_INTERVAL_SECONDS
+                $elapsed += $POLL_INTERVAL_SECONDS
+                $folderAction = Get-ComplianceSearchAction -Identity $folderActionName
+                Write-Detail "Purging... (${elapsed}s) - $($folderAction.Status)"
+            } while ($folderAction.Status -notin @('Completed', 'Failed'))
+
+            if ($folderAction.Status -eq 'Failed') {
+                throw "Compliance purge '$folderActionName' failed. Check the Security & Compliance portal."
+            }
+
+            Write-Detail "Purge complete." Green
+
+            Write-Host ""
+            Write-Host "      ================================================" -ForegroundColor DarkCyan
+            Write-Host "       Results" -ForegroundColor White
+            Write-Detail ("  Folder : {0}" -f $selectedFolder.Name) White
+            Write-Detail ("  Purged : {0:N0} items  ({1})" -f $folderSearch.Items, (Format-Size $folderSearch.Size)) Green
+            Write-Host "      ================================================" -ForegroundColor DarkCyan
+            Write-Host ""
+
+            $folderCleanupResults += [PSCustomObject]@{
+                FolderName = $selectedFolder.Name
+                Items      = $folderSearch.Items
+                SizeBytes  = $folderSearch.Size
+                Status     = 'Purged'
+            }
+
+        } catch {
+            Write-Host "`n      ERROR: $_" -ForegroundColor Red
+            $folderPurgeError = $true
+            $folderCleanupResults += [PSCustomObject]@{
+                FolderName = if ($selectedFolder) { $selectedFolder.Name } else { 'Unknown' }
+                Items      = 0
+                SizeBytes  = 0
+                Status     = 'Failed'
+            }
+        } finally {
+            if ($folderSearchName) {
+                try {
+                    Remove-ComplianceSearch -Identity $folderSearchName -Confirm:$false -ErrorAction Stop
+                    Write-Detail "Compliance search deleted." Green
+                } catch {
+                    Write-Detail "WARNING: Could not delete compliance search '$folderSearchName'. Delete it from the Security & Compliance portal." Yellow
+                }
+            }
+        }
+
+        Write-Host ""
+        Write-Host "      What would you like to do next?" -ForegroundColor White
+        Write-Host "        [A] Target another folder" -ForegroundColor Gray
+        Write-Host "        [M] Back to main menu" -ForegroundColor Gray
+        Write-Host "        [Q] Quit" -ForegroundColor Gray
+        Write-Host ""
+        $loopChoice = Read-Host "      Choice"
+        Write-Host ""
+
+        switch -Regex ($loopChoice) {
+            '^[Aa]' { $folderLoopActive = $true }
+            '^[Mm]' { $modeLoopActive   = $true }
+            default { }
+        }
+
+    } # end folder loop
+
+    continue
+} # end folderCleanupMode
 
 # --- MFA only: confirm intent, then fall through to Phase 6 via empty try ---
 if ($mfaOnlyMode) {
@@ -563,6 +810,8 @@ if ($sirWasDisabledByScript) {
     Write-Host "      ================================================`n" -ForegroundColor Yellow
 }
 
+} # end mode loop
+
 # --- Ticket export ---
 Write-Host ""
 $export = Read-Host "      Export summary report for ticket? [Y/N]"
@@ -578,7 +827,7 @@ if ($export -match '^[Yy]') {
         $sep
         " Date   : $reportTime"
         " Target : $Mailbox"
-        " Mode   : $(if ($mfaOnlyMode) { 'MFA Only' } else { 'Full Cleanup' })"
+        " Mode   : $(if ($mfaOnlyMode) { 'MFA Only' } elseif ($folderCleanupMode) { 'Folder Cleanup' } else { 'Full Cleanup' })"
         ""
         $dash
         " PRE-FLIGHT"
@@ -640,6 +889,22 @@ if ($export -match '^[Yy]') {
         $report += " Aborted by operator. No items were purged."
     } else {
         $report += " Completed with errors. Review console output for details."
+    }
+    if ($folderCleanupResults.Count -gt 0) {
+        $report += @(
+            ""
+            $dash
+            " FOLDER CLEANUP"
+            $dash
+        )
+        foreach ($r in $folderCleanupResults) {
+            if ($r.Status -eq 'Purged') {
+                $report += (" {0,-30} : {1:N0} items purged  ({2}) — HardDelete" -f `
+                    $r.FolderName, $r.Items, (Format-Size $r.SizeBytes))
+            } else {
+                $report += (" {0,-30} : Failed — check console output" -f $r.FolderName)
+            }
+        }
     }
     $report += $sep
 
