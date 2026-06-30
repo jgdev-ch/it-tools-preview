@@ -582,8 +582,8 @@ while ($modeLoopActive) {
     # --- Mode selection ---
     Write-Host ""
     Write-Host "      What would you like to do?" -ForegroundColor White
-    Write-Host "        [C] Full cleanup   — compliance search, purge, and MFA" -ForegroundColor Gray
-    Write-Host "        [M] MFA only       — re-check SIR, clear delay holds, and re-trigger MFA" -ForegroundColor Gray
+    Write-Host "        [C] Full cleanup     — compliance search, purge, and MFA" -ForegroundColor Gray
+    Write-Host "        [M] MFA only         — re-check SIR, clear delay holds, and re-trigger MFA" -ForegroundColor Gray
     Write-Host "        [F] Folder cleanup   — permanently purge contents of a primary mailbox folder" -ForegroundColor Gray
     Write-Host "        [A] Archive cleanup  — permanently purge contents of an In-Place Archive folder" -ForegroundColor Gray
     Write-Host "        [S] Status only      — view status, no changes" -ForegroundColor Gray
@@ -907,8 +907,9 @@ if ($archiveCleanupMode) {
         # Refresh archive folder stats each loop so sizes reflect previous purge
         $allArchiveFolders = Get-MailboxFolderStatistics -Identity $Mailbox -Archive
         $archiveTotalBytes = ($allArchiveFolders |
+            Where-Object { $_.FolderType -eq 'Root' } |
             ForEach-Object { ConvertTo-Bytes $_.FolderAndSubfolderSize } |
-            Measure-Object -Sum).Sum
+            Select-Object -First 1)
         if (-not $archiveTotalBytes) { $archiveTotalBytes = 0 }
         $archiveItemCount = ($allArchiveFolders | Measure-Object -Property ItemsInFolderAndSubfolders -Sum).Sum
         if (-not $archiveItemCount) { $archiveItemCount = 0 }
@@ -923,6 +924,12 @@ if ($archiveCleanupMode) {
             Where-Object {
                 $_.FolderType -ne 'Root' -and
                 $_.FolderType -notlike 'RecoverableItems*' -and
+                $_.FolderPath -notlike '/Recoverable Items*' -and
+                $_.FolderPath -notlike '/DiscoveryHolds*' -and
+                $_.FolderPath -notlike '/Deletions*' -and
+                $_.FolderPath -notlike '/Purges*' -and
+                $_.FolderPath -notlike '/Versions*' -and
+                $_.FolderPath -notlike '/SubstrateHolds*' -and
                 (ConvertTo-Bytes $_.FolderAndSubfolderSize) -gt $PRIMARY_FOLDER_SIZE_THRESHOLD
             } |
             Sort-Object { ConvertTo-Bytes $_.FolderAndSubfolderSize } -Descending
