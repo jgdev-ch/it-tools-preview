@@ -70,6 +70,42 @@
                         border:1px solid var(--border); background:var(--surface); color:var(--muted); cursor:pointer; }
     .edit-toggle-btn.active { background:var(--blue); border-color:var(--blue); color:#fff; }
 
+    /* ── Build Mode ── */
+    .build-trigger-btn { display:flex; align-items:center; gap:6px; background:var(--green); color:#fff; border:none;
+                          border-radius:10px; padding:8px 14px; font-size:12px; font-weight:700; cursor:pointer; }
+    .build-setup-bar { display:flex; align-items:center; gap:14px; padding:14px 18px; margin-bottom:16px; border-radius:14px;
+                        background:var(--glass-fill); border:1px solid var(--glass-border); backdrop-filter:blur(16px); }
+    .setup-field { display:flex; flex-direction:column; gap:3px; font-size:12px; }
+    .setup-field .tag { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:700; }
+    .setup-field .val { font-weight:600; color:var(--text); }
+    .setup-go-btn { margin-left:auto; background:var(--green); color:#fff; border:none; border-radius:10px; padding:8px 16px;
+                    font-weight:700; font-size:12px; cursor:pointer; }
+    .setup-cancel-btn { background:none; border:1px solid var(--border); border-radius:10px; padding:8px 14px; font-weight:600;
+                        font-size:12px; cursor:pointer; color:var(--muted); }
+    .build-canvas-panel { padding:14px 16px; border-radius:14px; background:var(--glass-fill);
+                           border:1px solid var(--glass-border); backdrop-filter:blur(16px); margin-bottom:14px; }
+    .build-month-group { margin-bottom:12px; }
+    .build-month-lbl { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin:0 0 4px 2px; }
+    .build-ribbon { display:flex; gap:5px; flex-wrap:wrap; }
+    .build-block { width:56px; height:52px; border-radius:9px; display:flex; flex-direction:column; align-items:center;
+                   justify-content:center; gap:2px; color:#fff; cursor:grab; box-shadow:0 1px 2px rgba(0,0,0,.1); }
+    .build-block.existing { opacity:.55; cursor:default; }
+    .build-block.dragging { transform:translateY(-8px) rotate(-3deg) scale(1.06); box-shadow:0 10px 20px rgba(0,0,0,.22); z-index:3; }
+    .build-block.drag-over { outline:2px dashed rgba(0,0,0,.35); outline-offset:2px; }
+    .build-block .build-block-initials { font-size:13px; font-weight:800; letter-spacing:.02em; }
+    .build-block .build-block-date { font-size:9px; font-weight:600; opacity:.85; }
+    .build-commit-bar { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-radius:14px;
+                        background:var(--glass-fill); border:1px solid var(--glass-border); backdrop-filter:blur(16px); font-size:12px; }
+    .build-commit-bar > div { display:flex; gap:8px; }
+    .ghost-btn { background:none; border:1px solid var(--border); border-radius:10px; padding:8px 16px; font-weight:600;
+                 font-size:12px; cursor:pointer; color:var(--muted); }
+    .build-popover { position:absolute; width:200px; padding:12px; z-index:50; border-radius:12px;
+                      background:var(--glass-fill); border:1px solid var(--glass-border);
+                      backdrop-filter:blur(16px); box-shadow:0 14px 28px rgba(0,0,0,.16); }
+    .build-popover .pop-field { margin-bottom:8px; }
+    .build-popover .pop-field label { display:block; font-size:10px; color:var(--muted); font-weight:700; margin-bottom:3px;
+                                       text-transform:uppercase; }
+
     /* ── Roster ── */
     .roster-section { margin-top:24px; }
     .roster-lbl { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin:0 0 8px; }
@@ -89,6 +125,9 @@
     .add-tile { border:1px dashed var(--border); border-radius:10px; display:flex; align-items:center; justify-content:center;
                 gap:6px; color:var(--muted); font-size:12px; font-weight:600; cursor:pointer; min-height:70px; }
     .add-tile:hover { border-color:var(--blue); color:var(--blue); }
+    .roster-drag-handle { display:flex; align-items:center; cursor:grab; color:var(--muted); margin-right:2px; }
+    .roster-card.dragging { opacity:.4; }
+    .roster-card.drag-over { outline:2px dashed var(--blue); outline-offset:2px; }
 
     /* ── Detail panel (shared: calendar week + roster contact) ── */
     #panelBackdrop { position:fixed; top:var(--topbar-h); left:0; right:0; bottom:0; background:rgba(0,0,0,0); pointer-events:none;
@@ -157,6 +196,7 @@
 
         <div class="cal-navbar">
           <div class="year-seg" id="yearSeg"></div>
+          <div id="buildTriggerWrap"></div>
           <input class="cal-search" id="searchInput" placeholder="Jump to person"
                  onkeydown="if(event.key==='Enter') searchPerson(this.value)"/>
           <div class="cal-nav-btns">
@@ -168,8 +208,10 @@
         <div class="month-row" id="monthRow"></div>
         <div class="week-strip" id="weekStrip"></div>
         <div class="month-pills" id="monthPills"></div>
+        <div id="buildSetupBar" class="build-setup-bar" style="display:none"></div>
+        <div id="buildCanvasSection" style="display:none"></div>
 
-        <div class="roster-section">
+        <div class="roster-section" id="rosterSection">
           <div class="roster-lbl" id="rotationLbl"></div>
           <div class="roster-grid" id="rotationGrid"></div>
           <div class="roster-lbl">Other Contacts</div>
@@ -214,6 +256,7 @@ const ICON_X             = `<svg width="14" height="14" viewBox="0 0 24 24" fill
 const ICON_FILE_TEXT     = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
 const ICON_PALMTREE      = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8c0-2.76-2.46-5-5.5-5S2 5.24 2 8h2l1-1 1 1h4"/><path d="M13 7.14A5.82 5.82 0 0 1 16.5 6c3.04 0 5.5 2.24 5.5 5h-3l-1-1-1 1h-3"/><path d="M5.89 9.71c-2.15 2.15-2.3 5.47-.35 7.43l4.24-4.25.7-.7.71-.71 2.12-2.12c-1.95-1.96-5.27-1.8-7.42.35"/><path d="M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-5.5-.5-12-1-14"/></svg>`;
 const ICON_PENCIL        = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>`;
+const ICON_GRIP          = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>`;
 
 function initials(name) {
   return name.split(" ").map(p => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
@@ -221,7 +264,8 @@ function initials(name) {
 
 function buildPersonColors(data) {
   const map = {};
-  data.rotationTechs.forEach((t, i) => { map[t.shortName] = PERSON_PALETTE[i % PERSON_PALETTE.length]; });
+  const sortedNames = data.rotationTechs.map(t => t.shortName).slice().sort();
+  sortedNames.forEach((shortName, i) => { map[shortName] = PERSON_PALETTE[i % PERSON_PALETTE.length]; });
   return map;
 }
 
@@ -229,7 +273,7 @@ function personColorFor(shortName) {
   return st.personColors[shortName] || OTHER_CONTACT_COLOR;
 }
 
-const st = { data: null, year: "2026", isAdmin: false, stripStart: 0, panel: null, draft: null };
+const st = { data: null, year: "2026", isAdmin: false, stripStart: 0, panel: null, draft: null, build: null };
 
 async function doSignIn() {
   try {
@@ -295,6 +339,7 @@ function renderAll() {
   renderYearSeg();
   renderCalendarStrip();
   renderRoster();
+  renderBuildTrigger();
 }
 
 // ── Hero card (current on-call week) ───────────────────────
@@ -335,8 +380,14 @@ function getYearWeeks(year) {
   return st.data.schedule.filter(r => r.startDate.startsWith(year));
 }
 
+function getScheduleYears() {
+  const years = new Set(st.data.schedule.map(r => r.startDate.slice(0, 4)));
+  return Array.from(years).sort();
+}
+
 function renderYearSeg() {
-  const years = ["2024", "2025", "2026"];
+  const years = getScheduleYears();
+  if (!years.includes(st.year)) st.year = years[years.length - 1] || st.year;
   document.getElementById("yearSeg").innerHTML = years.map(y =>
     `<span class="${y === st.year ? "on" : ""}" onclick="setYear('${y}')">${y}</span>`
   ).join("");
@@ -447,6 +498,248 @@ function jumpToMonth(monthIndex) {
   renderCalendarStrip();
 }
 
+// ── Build Mode ──────────────────────────────────────────────
+function computeYearSundays(year) {
+  const y = Number(year);
+  let d = new Date(Date.UTC(y, 0, 1));
+  while (d.getUTCDay() !== 0) d.setUTCDate(d.getUTCDate() + 1);
+  const sundays = [];
+  while (d.getUTCFullYear() === y) {
+    sundays.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 7);
+  }
+  return sundays;
+}
+
+function getNextGapYear() {
+  const years = getScheduleYears();
+  const lastYear = years.length ? Number(years[years.length - 1]) : new Date().getUTCFullYear();
+  const candidate = String(lastYear + 1);
+  const sundays = computeYearSundays(candidate);
+  const existing = new Set(st.data.schedule.map(r => r.startDate));
+  const hasGap = sundays.some(d => !existing.has(d));
+  return hasGap ? candidate : null;
+}
+
+function renderBuildTrigger() {
+  const wrap = document.getElementById("buildTriggerWrap");
+  const gapYear = (st.isAdmin && editMode) ? getNextGapYear() : null;
+  wrap.innerHTML = gapYear
+    ? `<button class="build-trigger-btn" onclick="openBuildSetup('${gapYear}')">${ICON_PENCIL} Build ${gapYear} Rotation</button>`
+    : "";
+}
+
+function describeContinuation(year) {
+  const sundays = computeYearSundays(year);
+  const before = st.data.schedule
+    .filter(r => r.startDate < sundays[0])
+    .sort((a, b) => (a.startDate < b.startDate ? 1 : -1))[0];
+  if (!before) return { fromLabel: "No prior rotation history", nextLabel: "", nextIdx: 0 };
+  const fromIdx = st.data.rotationTechs.findIndex(t => t.shortName === before.tech);
+  const fromTech = st.data.rotationTechs.find(t => t.shortName === before.tech);
+  const nextIdx = fromIdx === -1 ? 0 : (fromIdx + 1) % st.data.rotationTechs.length;
+  const nextTech = st.data.rotationTechs[nextIdx];
+  return {
+    fromLabel: (fromTech ? fromTech.name : before.tech) + " (" + before.startDate + ")",
+    nextLabel: nextTech ? nextTech.name : "",
+    nextIdx
+  };
+}
+
+function openBuildSetup(year) {
+  st.build = { phase: "setup", year, weeks: [] };
+  setBuildViewVisibility();
+  renderBuildSetupBar();
+}
+
+function renderBuildSetupBar() {
+  const info = describeContinuation(st.build.year);
+  document.getElementById("buildSetupBar").innerHTML = `
+    <div class="setup-field"><span class="tag">Start date</span><span class="val">January 1, ${st.build.year}</span></div>
+    <div class="setup-field"><span class="tag">Length</span><span class="val">Full year</span></div>
+    <div class="setup-field"><span class="tag">Continuing from</span><span class="val">${info.fromLabel} &rarr; next: ${info.nextLabel}</span></div>
+    <button class="setup-go-btn" onclick="generateProposal()">Generate Proposal</button>
+    <button class="setup-cancel-btn" onclick="cancelBuild()">Cancel</button>
+  `;
+}
+
+function cancelBuild() {
+  closeBuildPopover();
+  st.build = null;
+  setBuildViewVisibility();
+  renderBuildTrigger();
+}
+
+function setBuildViewVisibility() {
+  const inBuild = !!st.build;
+  document.getElementById("monthRow").style.display = inBuild ? "none" : "flex";
+  document.getElementById("weekStrip").style.display = inBuild ? "none" : "flex";
+  document.getElementById("monthPills").style.display = inBuild ? "none" : "flex";
+  document.getElementById("rosterSection").style.display = inBuild ? "none" : "block";
+  document.getElementById("buildSetupBar").style.display = (inBuild && st.build.phase === "setup") ? "flex" : "none";
+  document.getElementById("buildCanvasSection").style.display = (inBuild && st.build.phase === "canvas") ? "block" : "none";
+}
+
+function generateProposal() {
+  const year = st.build.year;
+  const sundays = computeYearSundays(year);
+  const existingByDate = {};
+  st.data.schedule.forEach(r => { existingByDate[r.startDate] = r; });
+  const info = describeContinuation(year);
+  let position = info.nextIdx;
+  const weeks = sundays.map(startDate => {
+    const existingRow = existingByDate[startDate];
+    if (existingRow) {
+      const idx = st.data.rotationTechs.findIndex(t => t.shortName === existingRow.tech);
+      if (idx !== -1) position = (idx + 1) % st.data.rotationTechs.length;
+      return { startDate, tech: existingRow.tech, timeOff: existingRow.timeOff, notes: existingRow.notes, existing: true };
+    }
+    const tech = st.data.rotationTechs[position];
+    position = (position + 1) % st.data.rotationTechs.length;
+    return { startDate, tech: tech ? tech.shortName : "", timeOff: "", notes: "", existing: false };
+  });
+  st.build.phase = "canvas";
+  st.build.weeks = weeks;
+  setBuildViewVisibility();
+  renderBuildCanvas();
+}
+
+function buildBlockHtml(week, idx) {
+  const tech = st.data.rotationTechs.find(t => t.shortName === week.tech);
+  const name = tech ? tech.name : week.tech;
+  const color = personColorFor(week.tech);
+  const dateLabel = new Date(week.startDate + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const dragAttrs = week.existing ? "" :
+    `draggable="true" ondragstart="buildDragStart(event, ${idx})" ondragover="buildDragOver(event)" ondrop="buildDrop(event, ${idx})" ondragend="buildDragEnd(event)" onclick="openBuildPopover(${idx})"`;
+  return `
+    <div class="build-block${week.existing ? " existing" : ""}" data-idx="${idx}" style="background:${color}"
+         title="${name}${week.existing ? " (already saved)" : ""}" ${dragAttrs}>
+      <span class="build-block-initials">${initials(name)}</span>
+      <span class="build-block-date">${dateLabel}</span>
+    </div>`;
+}
+
+function renderBuildCanvas() {
+  const groups = [];
+  st.build.weeks.forEach((w, idx) => {
+    const d = new Date(w.startDate + "T00:00:00Z");
+    const label = d.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" }).toUpperCase() + " " + d.getUTCFullYear();
+    if (!groups.length || groups[groups.length - 1].label !== label) groups.push({ label, items: [] });
+    groups[groups.length - 1].items.push({ week: w, idx });
+  });
+  const proposedCount = st.build.weeks.filter(w => !w.existing).length;
+  document.getElementById("buildCanvasSection").innerHTML = `
+    <div class="build-canvas-panel">
+      ${groups.map(g => `
+        <div class="build-month-group">
+          <div class="build-month-lbl">${g.label}</div>
+          <div class="build-ribbon">${g.items.map(it => buildBlockHtml(it.week, it.idx)).join("")}</div>
+        </div>`).join("")}
+    </div>
+    <div class="build-commit-bar">
+      <span>${proposedCount} week${proposedCount === 1 ? "" : "s"} proposed</span>
+      <div>
+        <button class="ghost-btn" onclick="cancelBuild()">Discard</button>
+        <button class="setup-go-btn" onclick="commitBuild()">Commit ${st.build.year} Rotation</button>
+      </div>
+    </div>
+  `;
+}
+
+let buildDragSrcIdx = null;
+
+function buildDragStart(evt, idx) {
+  buildDragSrcIdx = idx;
+  evt.currentTarget.classList.add("dragging");
+  evt.dataTransfer.effectAllowed = "move";
+}
+
+function buildDragOver(evt) {
+  evt.preventDefault();
+  evt.currentTarget.classList.add("drag-over");
+}
+
+function buildDrop(evt, idx) {
+  evt.preventDefault();
+  evt.currentTarget.classList.remove("drag-over");
+  if (buildDragSrcIdx === null || buildDragSrcIdx === idx) return;
+  const weeks = st.build.weeks;
+  const techA = weeks[buildDragSrcIdx].tech;
+  weeks[buildDragSrcIdx].tech = weeks[idx].tech;
+  weeks[idx].tech = techA;
+  buildDragSrcIdx = null;
+  renderBuildCanvas();
+}
+
+function buildDragEnd(evt) {
+  evt.currentTarget.classList.remove("dragging");
+  document.querySelectorAll(".build-block.drag-over").forEach(el => el.classList.remove("drag-over"));
+}
+
+let buildPopoverIdx = null;
+
+function openBuildPopover(idx) {
+  buildPopoverIdx = idx;
+  renderBuildPopover();
+}
+
+function closeBuildPopover() {
+  buildPopoverIdx = null;
+  const el = document.getElementById("buildPopover");
+  if (el) el.remove();
+}
+
+function renderBuildPopover() {
+  const existingEl = document.getElementById("buildPopover");
+  if (existingEl) existingEl.remove();
+  const week = st.build.weeks[buildPopoverIdx];
+  const blockEl = document.querySelector(`.build-block[data-idx="${buildPopoverIdx}"]`);
+  if (!blockEl) return;
+  const rect = blockEl.getBoundingClientRect();
+  const options = st.data.rotationTechs.map(t =>
+    `<option value="${t.shortName}"${t.shortName === week.tech ? " selected" : ""}>${t.name}</option>`
+  ).join("");
+  const pop = document.createElement("div");
+  pop.id = "buildPopover";
+  pop.className = "build-popover";
+  pop.style.top = (rect.bottom + window.scrollY + 6) + "px";
+  pop.style.left = (rect.left + window.scrollX) + "px";
+  pop.innerHTML = `
+    <div class="pop-field"><label>Week of ${week.startDate}</label></div>
+    <div class="pop-field"><label>Tech</label>
+      <select class="panel-select" onchange="st.build.weeks[${buildPopoverIdx}].tech=this.value">${options}</select>
+    </div>
+    <div class="pop-field"><label>Time off</label>
+      <input class="panel-input" value="${week.timeOff || ""}" onchange="st.build.weeks[${buildPopoverIdx}].timeOff=this.value"/>
+    </div>
+    <div class="pop-field"><label>Notes</label>
+      <input class="panel-input" value="${week.notes || ""}" onchange="st.build.weeks[${buildPopoverIdx}].notes=this.value"/>
+    </div>
+    <button class="setup-go-btn" style="width:100%" onclick="applyBuildPopover()">Apply</button>
+  `;
+  document.body.appendChild(pop);
+}
+
+function applyBuildPopover() {
+  closeBuildPopover();
+  renderBuildCanvas();
+}
+
+function commitBuild() {
+  const proposed = st.build.weeks.filter(w => !w.existing).map(w => ({
+    startDate: w.startDate, tech: w.tech, timeOff: w.timeOff || "", notes: w.notes || ""
+  }));
+  st.data.schedule.push(...proposed);
+  st.data.schedule.sort((a, b) => (a.startDate < b.startDate ? -1 : 1));
+  const builtYear = st.build.year;
+  st.build = null;
+  setBuildViewVisibility();
+  st.year = builtYear;
+  st.stripStart = 0;
+  renderAll();
+  saveChanges();
+}
+
 // ── Edit mode toggle (schedule-side wiring finishes in a later task) ──
 let editMode = false;
 
@@ -454,9 +747,11 @@ function toggleEditMode() {
   editMode = !editMode;
   document.getElementById("editToggleBtn").classList.toggle("active", editMode);
   document.getElementById("saveBtn").style.display = editMode ? "inline-block" : "none";
+  if (!editMode && st.build) { st.build = null; setBuildViewVisibility(); }
   closePanel();
   renderCalendarStrip();
   renderRoster();
+  renderBuildTrigger();
 }
 
 // ── Detail panel (shared shell) ─────────────────────────────
@@ -540,9 +835,14 @@ function rosterCardHtml(person, group, idx) {
   const color = group === "rotation" ? personColorFor(person.shortName) : OTHER_CONTACT_COLOR;
   const visiblePhones = person.phones.slice(0, 2);
   const extra = person.phones.length - visiblePhones.length;
+  const canReorder = group === "rotation" && st.isAdmin && editMode;
+  const dragAttrs = canReorder
+    ? `draggable="true" ondragstart="rosterDragStart(event, ${idx})" ondragover="rosterDragOver(event)" ondrop="rosterDrop(event, ${idx})" ondragend="rosterDragEnd(event)"`
+    : "";
   return `
-    <div class="roster-card${group === "other" ? " dim" : ""}" onclick="openContactPanel('${group}', ${idx})">
+    <div class="roster-card${group === "other" ? " dim" : ""}" ${dragAttrs} onclick="openContactPanel('${group}', ${idx})">
       <div class="roster-card-top">
+        ${canReorder ? `<span class="roster-drag-handle">${ICON_GRIP}</span>` : ""}
         <div class="roster-dot" style="background:${color}">${initials(person.name)}</div>
         <div>
           <div class="roster-name">${person.name}</div>
@@ -564,6 +864,38 @@ function renderRoster() {
   const addOtherTile = (st.isAdmin && editMode) ? `<div class="add-tile" onclick="addContact('other')">${ICON_PLUS} Add Contact</div>` : "";
   document.getElementById("rotationGrid").innerHTML = rotationHtml + addRotationTile;
   document.getElementById("otherGrid").innerHTML = otherHtml + addOtherTile;
+}
+
+let rosterDragSrcIdx = null;
+
+function rosterDragStart(evt, idx) {
+  rosterDragSrcIdx = idx;
+  evt.currentTarget.classList.add("dragging");
+  evt.dataTransfer.effectAllowed = "move";
+}
+
+function rosterDragOver(evt) {
+  evt.preventDefault();
+  evt.currentTarget.classList.add("drag-over");
+}
+
+function rosterDrop(evt, idx) {
+  evt.preventDefault();
+  evt.currentTarget.classList.remove("drag-over");
+  if (rosterDragSrcIdx === null || rosterDragSrcIdx === idx) return;
+  const arr = st.data.rotationTechs;
+  const [moved] = arr.splice(rosterDragSrcIdx, 1);
+  arr.splice(idx, 0, moved);
+  st.personColors = buildPersonColors(st.data);
+  rosterDragSrcIdx = null;
+  renderRoster();
+  renderCalendarStrip();
+  saveChanges();
+}
+
+function rosterDragEnd(evt) {
+  evt.currentTarget.classList.remove("dragging");
+  document.querySelectorAll(".roster-card.drag-over").forEach(el => el.classList.remove("drag-over"));
 }
 
 function addContact(group) {
@@ -692,6 +1024,11 @@ async function init() {
   document.getElementById("navNextBtn").innerHTML = "Next " + ICON_CHEVRON_RIGHT;
   document.getElementById("panelCloseBtn").innerHTML = ICON_X;
   document.getElementById("editToggleBtn").innerHTML = ICON_PENCIL;
+  document.addEventListener("click", evt => {
+    if (buildPopoverIdx === null) return;
+    const pop = document.getElementById("buildPopover");
+    if (pop && !pop.contains(evt.target) && !evt.target.closest(".build-block")) closeBuildPopover();
+  });
 
   let _sessionFound = false;
   await ITTools.auth.init({
